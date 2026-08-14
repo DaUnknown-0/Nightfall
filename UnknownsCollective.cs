@@ -70,6 +70,12 @@ namespace Nightfall {
                 var members = Members();
                 if (members.Count == 0) return text;
 
+                // The collective name is a round-time thing: with two or more mods contributing,
+                // fold them into "Unknown's Collective" only while a round is actually in progress
+                // (ShipStatus.Instance is set), not in the lobby. A single contributing mod is
+                // unaffected - it keeps showing its own line everywhere, exactly as it always has.
+                if (members.Count > 1 && ShipStatus.Instance == null) return text;
+
                 if (Input.GetMouseButtonDown(0)) {
                     Camera cam = Camera.main;
                     var canvas = tmp.canvas;
