@@ -1,0 +1,476 @@
+// Nightfall - Copyright (C) 2026 DaUnknown-0
+// Licensed under GPL-3.0-or-later. See LICENSE for details.
+
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using BepInEx;
+using BepInEx.Unity.IL2CPP.Utils;
+using Il2CppInterop.Runtime.Attributes;
+using UnityEngine;
+using UnityEngine.Networking;
+using UnityEngine.SceneManagement;
+using UnityEngine.UI;
+using AmongUs.Data;
+using Assets.InnerNet;
+using Twitch;
+
+namespace Nightfall {
+    // Self-updater that checks the GitHub releases of this repo and offers an in-game update
+    // button on the main menu. Mirrors TOR's own ModUpdater flow (and this project family's other
+    // mods' updaters, e.g. HostFixPlugin.HostFixUpdater) but uses its own GithubRelease DTOs so
+    // this plugin needs no compile-time reference to TheOtherRoles.
+    public class NightfallUpdater : MonoBehaviour {
+        public const string RepositoryOwner = "DaUnknown-0";
+        public const string RepositoryName = "Nightfall";
+        public const string PluginAssetName = "Nightfall.dll";
+
+        public static NightfallUpdater Instance { get; private set; }
+
+        public NightfallUpdater(IntPtr ptr) : base(ptr) { }
+
+        private bool _busy;
+        private bool _showPopUp = true;
+        public List<GithubRelease> Releases;
+
+        // Download state for the Mod Manager. 0 = idle, 1 = downloading, 2 = success (restart
+        // required), 3 = error. Lives on the instance so the Mod Manager UI can poll it across
+        // being closed and reopened.
+        private int _updateState;
+        private float _updateProgress;
+
+        // True once the GitHub release check has finished (success or failure). Polled by the Mod
+        // Manager so it only shows the collected update announcement after every mod's check.
+        private bool _checkCompleted;
+
+        public void Awake() {
+            if (Instance) Destroy(Instance);
+            Instance = this;
+            foreach (var file in Directory.GetFiles(Paths.PluginPath, PluginAssetName + ".old")) {
+                File.Delete(file);
+            }
+        }
+
+        private void Start() {
+            if (_busy) return;
+            this.StartCoroutine(CoCheckForUpdate());
+            SceneManager.add_sceneLoaded((Action<Scene, LoadSceneMode>)OnSceneLoaded);
+        }
+
+        [HideFromIl2Cpp]
+        public void StartDownloadRelease(GithubRelease release, bool managerMode = false) {
+            if (_busy) return;
+            this.StartCoroutine(CoDownloadRelease(release, managerMode));
+        }
+
+        // Re-check triggered by the Mod Manager on open (throttled to 1/minute by
+        // ModManagerRegistry.MaybeCheckForUpdates).
+        [HideFromIl2Cpp]
+        public void TriggerCheckFromManager() {
+            if (_busy) return;          // a check/download is already running - don't stack another
+            _checkCompleted = false;    // lets the UI/announcement notice the re-check in flight
+            this.StartCoroutine(CoCheckForUpdate());
+        }
+
+        // Reflection/direct-callable getters for the Mod Manager UI.
+        [HideFromIl2Cpp]
+        public int GetUpdateState() => _updateState;
+
+        [HideFromIl2Cpp]
+        public float GetUpdateProgress() => _updateProgress;
+
+        [HideFromIl2Cpp]
+        public bool GetCheckCompleted() => _checkCompleted;
+
+        // True when the release list was successfully fetched (Mod Manager shows "check unavailable"
+        // instead of a misleading "up to date" when the GitHub call failed/rate-limited).
+        [HideFromIl2Cpp]
+        public bool ReleasesLoaded() => Releases != null && Releases.Count > 0;
+
+        [HideFromIl2Cpp]
+        private IEnumerator CoCheckForUpdate() {
+            _busy = true;
+            var www = new UnityWebRequest();
+            www.SetMethod(UnityWebRequest.UnityWebRequestMethod.Get);
+            www.SetUrl($"https://api.github.com/repos/{RepositoryOwner}/{RepositoryName}/releases");
+            // GitHub rejects UA-less clients - set a distinct one.
+            www.SetRequestHeader("User-Agent", $"Nightfall/{NightfallPlugin.PluginVersion}");
+            www.downloadHandler = new DownloadHandlerBuffer();
+            var operation = www.SendWebRequest();
+
+            while (!operation.isDone) {
+                yield return new WaitForEndOfFrame();
+            }
+
+            if (www.isNetworkError || www.isHttpError) {
+                www.downloadHandler.Dispose();
+                www.Dispose();
+                _checkCompleted = true;
+                _busy = false;
+                yield break;
+            }
+
+            // GitHub returns a JSON OBJECT instead of an array on rate-limit (403) or error;
+            // Deserialize/Sort must not kill the coroutine, or `_busy` would stay true for the
+            // whole session and block every further check/download. try/catch is fine here since
+            // this block contains no yield.
+            try {
+                Releases = JsonSerializer.Deserialize<List<GithubRelease>>(www.downloadHandler.text);
+                if (Releases != null) Releases.Sort(SortReleases);
+            } catch (Exception ex) {
+                NightfallPlugin.Logger?.LogWarning($"[Nightfall] update check: failed to parse GitHub releases ({ex.Message}). Treating as 'no update'.");
+                // Leave Releases as-is (possibly null) - treated as "no update" everywhere.
+            } finally {
+                www.downloadHandler.Dispose();
+                www.Dispose();
+                _checkCompleted = true;
+                _busy = false;
+            }
+        }
+
+        [HideFromIl2Cpp]
+        private IEnumerator CoDownloadRelease(GithubRelease release, bool managerMode) {
+            _busy = true;
+            _updateState = 1;
+            _updateProgress = 0f;
+
+            // No Among Us TwitchPopup in manager mode; the Mod Manager shows progress/state itself
+            // via GetUpdateState()/GetUpdateProgress().
+            GenericPopup popup = null;
+            GameObject button = null;
+            if (!managerMode) {
+                popup = Instantiate(TwitchManager.Instance.TwitchPopup);
+                popup.TextAreaTMP.fontSize *= 0.7f;
+                popup.TextAreaTMP.enableAutoSizing = false;
+
+                popup.Show();
+
+                button = popup.transform.GetChild(2).gameObject;
+                button.SetActive(false);
+                popup.TextAreaTMP.text = "Updating Nightfall...";
+            }
+
+            var asset = release.Assets.Find(FilterPluginAsset);
+            var www = new UnityWebRequest();
+            www.SetMethod(UnityWebRequest.UnityWebRequestMethod.Get);
+            www.SetUrl(asset.DownloadUrl);
+            www.downloadHandler = new DownloadHandlerBuffer();
+            var operation = www.SendWebRequest();
+
+            while (!operation.isDone) {
+                _updateProgress = www.downloadProgress;
+                if (!managerMode) {
+                    int stars = Mathf.CeilToInt(www.downloadProgress * 10);
+                    string progress = "Downloading: " + new String((char)0x25A0, stars) + new String((char)0x25A1, 10 - stars);
+                    popup.TextAreaTMP.text = progress;
+                }
+                yield return new WaitForEndOfFrame();
+            }
+
+            if (www.isNetworkError || www.isHttpError) {
+                _updateState = 3;
+                if (!managerMode) {
+                    popup.TextAreaTMP.text = "Update failed.";
+                    button.SetActive(true);
+                }
+                _busy = false;
+                yield break;
+            }
+            if (!managerMode) {
+                popup.TextAreaTMP.text = "Copying files...";
+            }
+
+            var filePath = Path.Combine(Paths.PluginPath, asset.Name);
+
+            if (File.Exists(filePath + ".old")) File.Delete(filePath + ".old");
+            if (File.Exists(filePath)) File.Move(filePath, filePath + ".old");
+
+            var persistTask = File.WriteAllBytesAsync(filePath, www.downloadHandler.data);
+            var hasError = false;
+            while (!persistTask.IsCompleted) {
+                if (persistTask.Exception != null) {
+                    hasError = true;
+                    break;
+                }
+
+                yield return new WaitForEndOfFrame();
+            }
+
+            www.downloadHandler.Dispose();
+            www.Dispose();
+
+            if (!hasError) {
+                _updateState = 2;
+                if (!managerMode) {
+                    popup.TextAreaTMP.text = "Update installed - restart Among Us to apply it.";
+                }
+            } else {
+                _updateState = 3;
+            }
+            if (!managerMode) button.SetActive(true);
+            _busy = false;
+        }
+
+        [HideFromIl2Cpp]
+        private static bool FilterPluginAsset(GithubAsset asset) {
+            return asset.Name == PluginAssetName;
+        }
+
+        [HideFromIl2Cpp]
+        private static int SortReleases(GithubRelease a, GithubRelease b) {
+            if (a.IsNewer(b.Version)) return -1;
+            if (b.IsNewer(a.Version)) return 1;
+            return 0;
+        }
+
+        private void OnSceneLoaded(Scene scene, LoadSceneMode mode) {
+            if (_busy || scene.name != "MainMenu" || Releases == null) return;
+
+            // No own update button if the Mod Manager is enabled - it offers its own.
+            if (IsModManagerEnabled()) {
+                return;
+            }
+
+            var latestRelease = UpdateTarget();
+            if (latestRelease == null || !IsActualUpdate(latestRelease.Version, NightfallPlugin.Version) || !latestRelease.Assets.Any(FilterPluginAsset))
+                return;
+
+            var template = GameObject.Find("ExitGameButton");
+            if (!template) return;
+
+            var button = Instantiate(template, null);
+            // Stacked below this project family's other updaters' anchors to avoid overlap.
+            button.GetComponent<AspectPosition>().anchorPoint = new Vector2(0.458f, 0.38f);
+
+            PassiveButton passiveButton = button.GetComponent<PassiveButton>();
+            passiveButton.OnClick = new Button.ButtonClickedEvent();
+            passiveButton.OnClick.AddListener((Action)(() => {
+                StartDownloadRelease(latestRelease);
+                button.SetActive(false);
+            }));
+
+            var text = button.transform.GetComponentInChildren<TMPro.TMP_Text>();
+            string t = "Update Nightfall";
+            StartCoroutine(Effects.Lerp(0.1f, (Action<float>)(p => text.SetText(t))));
+            passiveButton.OnMouseOut.AddListener((Action)(() => text.color = Color.cyan));
+            passiveButton.OnMouseOver.AddListener((Action)(() => text.color = Color.white));
+            text.color = Color.cyan;
+
+            if (_showPopUp) {
+                var announcement = $"Nightfall {latestRelease.Tag} is available.\n\n{latestRelease.Description}";
+                var mgr = FindObjectOfType<MainMenuManager>(true);
+                if (mgr != null)
+                    mgr.StartCoroutine(CoShowAnnouncement(announcement, shortTitle: "Nightfall Update", date: latestRelease.PublishedAt));
+            }
+            _showPopUp = false;
+        }
+
+        [HideFromIl2Cpp]
+        public IEnumerator CoShowAnnouncement(string announcement, bool show = true, string shortTitle = "Nightfall Update", string title = "", string date = "") {
+            // Stagger behind this project family's other announcement popups.
+            yield return new WaitForSeconds(1.8f);
+            // Wait until no announcement popup is currently visible (up to 30 s).
+            for (float t = 30f; t > 0f; t -= 0.25f) {
+                if (UnityEngine.Object.FindObjectOfType<AnnouncementPopUp>() == null) break;
+                yield return new WaitForSeconds(0.25f);
+            }
+            yield return new WaitForSeconds(0.2f);
+
+            var mgr = FindObjectOfType<MainMenuManager>(true);
+            var popUpTemplate = UnityEngine.Object.FindObjectOfType<AnnouncementPopUp>(true);
+            // Without a template, Instantiate(null) would throw immediately; without a manager,
+            // mgr.StartCoroutine(...) below would NRE.
+            if (popUpTemplate == null || mgr == null) {
+                yield break;
+            }
+            var popUp = UnityEngine.Object.Instantiate(popUpTemplate);
+
+            popUp.gameObject.SetActive(true);
+
+            Announcement nightfallAnnouncement = new() {
+                Id = "nightfallAnnouncement",
+                Language = 0,
+                Number = 6972,
+                Title = title == "" ? "Nightfall Update" : title,
+                ShortTitle = shortTitle,
+                SubTitle = "",
+                PinState = false,
+                Date = date == "" ? DateTime.Now.Date.ToString() : date,
+                Text = announcement,
+            };
+            mgr.StartCoroutine(Effects.Lerp(0.1f, new Action<float>((p) => {
+                if (p == 1) {
+                    var backup = DataManager.Player.Announcements.allAnnouncements;
+                    DataManager.Player.Announcements.allAnnouncements = new();
+                    popUp.Init(false);
+                    DataManager.Player.Announcements.SetAnnouncements(new Announcement[] { nightfallAnnouncement });
+                    popUp.CreateAnnouncementList();
+                    popUp.UpdateAnnouncementText(nightfallAnnouncement.Number);
+                    popUp.visibleAnnouncements[0].PassiveButton.OnClick.RemoveAllListeners();
+                    DataManager.Player.Announcements.allAnnouncements = backup;
+                }
+            })));
+        }
+
+        // ---- Channel awareness + semantic version comparison ----
+        // Semantic comparison where a STABLE vX.Y.Z SUPERSEDES its prereleases vX.Y.Z.W (unlike
+        // System.Version, which wrongly orders 1.0.0.4 > 1.0.0). >0 means a is newer than b.
+        [HideFromIl2Cpp]
+        public static int SemCompare(Version a, Version b) {
+            int c = new Version(a.Major, System.Math.Max(0, a.Minor), System.Math.Max(0, a.Build)).CompareTo(new Version(b.Major, System.Math.Max(0, b.Minor), System.Math.Max(0, b.Build)));
+            if (c != 0) return c;
+            bool aPre = a.Revision > 0, bPre = b.Revision > 0;
+            if (aPre && bPre) return a.Revision.CompareTo(b.Revision);
+            if (aPre == bPre) return 0;
+            return aPre ? -1 : 1; // prerelease older than the finalized stable of the same base
+        }
+
+        // True when `target` is a version the user should actually install (not just "semantically
+        // newer"). On the test channel, stable vX.Y.Z for a user already on prerelease vX.Y.Z.W is
+        // a channel switch, not an update - the base version did not advance. Channel switches go
+        // through TriggerChannelSwitch.
+        [HideFromIl2Cpp]
+        private static bool IsActualUpdate(Version target, Version current) {
+            if (SemCompare(target, current) <= 0) return false;
+            if (VersionDisplay.ShowTestVersions() && current.Revision > 0 && target.Revision <= 0) {
+                var tBase = new Version(target.Major, System.Math.Max(0, target.Minor), System.Math.Max(0, target.Build));
+                var cBase = new Version(current.Major, System.Math.Max(0, current.Minor), System.Math.Max(0, current.Build));
+                if (tBase.CompareTo(cBase) <= 0) return false;
+            }
+            return true;
+        }
+
+        // Channel from the TAG FORMAT: stable = vX.Y.Z (Version.Revision <= 0), test = vX.Y.Z.W (>0).
+        [HideFromIl2Cpp]
+        public GithubRelease LatestInChannel(bool stable) {
+            if (Releases == null) return null;
+            foreach (var r in Releases) {
+                if (r == null || r.Draft) continue;
+                int rev;
+                try { rev = r.Version.Revision; } catch { continue; }
+                bool isTest = rev > 0;
+                if (stable == isTest) continue;
+                if (r.Assets != null && r.Assets.Any(FilterPluginAsset)) return r;
+            }
+            return null;
+        }
+
+        [HideFromIl2Cpp]
+        public bool HasChannelRelease(bool stable) => LatestInChannel(stable) != null;
+
+        // The update target follows the shared "show test versions" toggle. OFF -> newest STABLE
+        // only. ON -> newest PRERELEASE when its base is >= latest stable base (test channel
+        // target); only use stable when stable base is strictly higher (genuine new stable beyond
+        // any prerelease).
+        [HideFromIl2Cpp]
+        public GithubRelease UpdateTarget() {
+            if (Releases == null) return null;
+            var stable = LatestInChannel(true);
+            if (!VersionDisplay.ShowTestVersions()) return stable;
+            var pre = LatestInChannel(false);
+            if (pre == null) return stable;
+            if (stable == null) return pre;
+            var stableBase = new Version(stable.Version.Major, System.Math.Max(0, stable.Version.Minor), System.Math.Max(0, stable.Version.Build));
+            var preBase = new Version(pre.Version.Major, System.Math.Max(0, pre.Version.Minor), System.Math.Max(0, pre.Version.Build));
+            return stableBase.CompareTo(preBase) > 0 ? stable : pre;
+        }
+
+        // Callback methods for ModManagerRegistry: checks whether an update is available.
+        [HideFromIl2Cpp]
+        public bool HasUpdate() {
+            var t = UpdateTarget();
+            return t != null && t.Assets.Any(FilterPluginAsset)
+                && IsActualUpdate(t.Version, NightfallPlugin.Version);
+        }
+
+        // Raw release notes (GitHub `body`) of the target version (from the already-loaded JSON).
+        [HideFromIl2Cpp]
+        public string GetReleaseNotes() => UpdateTarget()?.Description ?? "";
+
+        // Callback method for ModManagerRegistry: starts the update download.
+        [HideFromIl2Cpp]
+        public void TriggerUpdateFromManager() {
+            var t = UpdateTarget();
+            if (t != null && t.Assets.Any(FilterPluginAsset)
+                && IsActualUpdate(t.Version, NightfallPlugin.Version))
+                StartDownloadRelease(t, managerMode: true);
+        }
+
+        // Force-installs the latest release of the given channel (up- OR downgrade). Only
+        // downloads if it is REALLY a different version than the running build.
+        [HideFromIl2Cpp]
+        public void TriggerChannelSwitch(bool stable) {
+            var r = LatestInChannel(stable);
+            if (r != null && SemCompare(r.Version, NightfallPlugin.Version) != 0)
+                StartDownloadRelease(r, managerMode: true);
+        }
+
+        // Checks via AppDomain whether the Mod Manager is enabled (no compile-time reference).
+        private static bool IsModManagerEnabled() {
+            try {
+                var data = AppDomain.CurrentDomain.GetData("ModManager.IsEnabled");
+                return data is bool b && b;
+            } catch {
+                return false;
+            }
+        }
+    }
+
+    // Minimal DTOs matching the GitHub Releases API JSON. Kept local so this plugin needs no
+    // compile-time reference to TheOtherRoles.
+    public class GithubRelease {
+        [JsonPropertyName("id")]
+        public int Id { get; set; }
+
+        [JsonPropertyName("tag_name")]
+        public string Tag { get; set; }
+
+        [JsonPropertyName("name")]
+        public string Name { get; set; }
+
+        [JsonPropertyName("draft")]
+        public bool Draft { get; set; }
+
+        [JsonPropertyName("prerelease")]
+        public bool Prerelease { get; set; }
+
+        [JsonPropertyName("created_at")]
+        public string CreatedAt { get; set; }
+
+        [JsonPropertyName("published_at")]
+        public string PublishedAt { get; set; }
+
+        [JsonPropertyName("body")]
+        public string Description { get; set; }
+
+        [JsonPropertyName("assets")]
+        public List<GithubAsset> Assets { get; set; }
+
+        public Version Version => Version.Parse(Tag.Replace("v", string.Empty));
+
+        public bool IsNewer(Version version) {
+            return Version > version;
+        }
+    }
+
+    public class GithubAsset {
+        [JsonPropertyName("url")]
+        public string Url { get; set; }
+
+        [JsonPropertyName("id")]
+        public int Id { get; set; }
+
+        [JsonPropertyName("name")]
+        public string Name { get; set; }
+
+        [JsonPropertyName("size")]
+        public int Size { get; set; }
+
+        [JsonPropertyName("browser_download_url")]
+        public string DownloadUrl { get; set; }
+    }
+}

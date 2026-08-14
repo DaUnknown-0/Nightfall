@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net6.0</TargetFramework>
+        <Version>0.1.0.0</Version>
+        <Description>Nightfall - a first-person view for Among Us. When Unknown's Collection's Werewolf transforms, every living player drops into a true first-person perspective rendered from the map's own geometry.</Description>
+        <Authors>DaUnknown-0</Authors>
+        <LangVersion>latest</LangVersion>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+        <PlatformTarget>AnyCPU</PlatformTarget>
+        <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+        <Platforms>AnyCPU</Platforms>
+        <AssemblyName>Nightfall</AssemblyName>
+        <RootNamespace>Nightfall</RootNamespace>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="AmongUs.GameLibs.Steam" Version="2024.10.29" />
+        <PackageReference Include="BepInEx.IL2CPP.MSBuild" Version="2.1.0-rc.1" />
+        <PackageReference Include="BepInEx.Unity.IL2CPP" Version="6.0.0-be.697" />
+        <PackageReference Include="Reactor" Version="2.3.1" />
+    </ItemGroup>
+
+    <!-- Deploy straight into the test installation. AmongUsLatest is not set in this shell, so the
+         Copy target below is the one that actually runs (see the hard-coded fallback path). -->
+    <PropertyGroup>
+        <NightfallDeployDir Condition="'$(NightfallDeployDir)' == '' AND '$(AmongUsLatest)' != ''">$(AmongUsLatest)/BepInEx/plugins/</NightfallDeployDir>
+        <NightfallDeployDir Condition="'$(NightfallDeployDir)' == ''">C:\Users\moritz\Downloads\Among Us - 4.7.0\Among Us - 4.7.0\BepInEx\plugins\</NightfallDeployDir>
+    </PropertyGroup>
+
+    <Target Name="CopyCustomContent" AfterTargets="Build" Condition="Exists('$(NightfallDeployDir)')">
+        <Message Text="Copying Nightfall to $(NightfallDeployDir)" Importance="high" />
+        <Copy SourceFiles="$(ProjectDir)\bin\$(Configuration)\net6.0\Nightfall.dll" DestinationFolder="$(NightfallDeployDir)" />
+    </Target>
+</Project>
