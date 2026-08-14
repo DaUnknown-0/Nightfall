@@ -168,6 +168,7 @@ public static class AvatarCapture
     private static bool CaptureInto(PlayerControl p, Entry e, bool petOnly)
     {
         var moved = new List<(GameObject go, int layer)>();
+        var masked = new List<(SpriteRenderer r, SpriteMaskInteraction mode)>();
         GameObject camGo = null;
         RenderTexture rt = null;
         RenderTexture previous = null;
@@ -204,7 +205,9 @@ public static class AvatarCapture
              * The pet is excluded here as well and captured on its own pass: it is a separate
              * object that walks after its owner, so its pixels do not belong in the owner's frame.
              */
-            var mine = new List<Renderer>();
+            // Typed as SpriteRenderer, not Renderer: the filter below only ever accepts sprite
+            // renderers anyway, and the mask suspension further down needs the concrete type.
+            var mine = new List<SpriteRenderer>();
             foreach (var r in root.GetComponentsInChildren<SpriteRenderer>(true))
             {
                 if (r == null || !r.enabled) continue;
@@ -219,6 +222,26 @@ public static class AvatarCapture
                 var go = r.gameObject;
                 moved.Add((go, go.layer));
                 go.layer = IsolationLayer;
+            }
+
+            /*
+             * SUSPEND SPRITE MASKING FOR THE SHOT.
+             *
+             * The body, the visor and the skin render with `VisibleInsideMask`: Among Us shows them
+             * only inside the player's sight mask (the same fact the Illusionist's clone has to work
+             * around, see UnknownsCollection/IllusionistClone.cs). The isolation camera sees layer 30
+             * and nothing else, so there is no mask in its view - and those three parts came out
+             * completely empty while the hat, which usually sits at `None`, photographed fine. The
+             * result was a hat and a suit floating with no crewmate inside them.
+             *
+             * Masking is therefore switched off for the duration of the render and restored in the
+             * same `finally` that restores the layers, because a renderer left at `None` would stay
+             * visible through walls for the rest of the round.
+             */
+            foreach (var r in mine)
+            {
+                masked.Add((r, r.maskInteraction));
+                r.maskInteraction = SpriteMaskInteraction.None;
             }
 
             /*
@@ -321,6 +344,12 @@ public static class AvatarCapture
             foreach (var (go, layer) in moved)
             {
                 try { if (go != null) go.layer = layer; } catch { }
+            }
+            // ... and back under its own mask rule. Skipping this would leave players visible
+            // through walls, which is a far worse bug than the one the suspension fixes.
+            foreach (var (r, mode) in masked)
+            {
+                try { if (r != null) r.maskInteraction = mode; } catch { }
             }
             try { if (previous != null) RenderTexture.active = previous; } catch { }
             try { if (readback != null) UnityEngine.Object.Destroy(readback); } catch { }
