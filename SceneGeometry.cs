@@ -30,6 +30,16 @@ public static class SceneGeometry
     private static readonly List<(OpenableDoor door, int sourceId)> doors = new();
     private static readonly Dictionary<int, bool> doorState = new();
 
+    /// The DECONTAMINATION doors, tracked separately, because they can never be in the list above:
+    /// ShipStatus.AllDoors is typed OpenableDoor[], and the Polus decon doors are ManualDoor,
+    /// which extends SomeKindaDoor directly - no IsOpen, no network Id, driven purely by
+    /// DeconSystem.UpdateDoorsViaState -> SetDoorway. Before this list existed their closed
+    /// colliders were baked as permanent walls: the vanilla door opened underneath (the button
+    /// sound plays, the collider goes off) while the first-person picture kept showing it shut.
+    /// State is read from each baked collider itself ("enabled" means "blocks"), which is the
+    /// physical truth SetDoorway writes and needs no knowledge of the door subclass at all.
+    private static readonly List<(Collider2D col, int sourceId)> deconDoors = new();
+
     public static bool IsBuilt => Current != null;
 
     public static void Clear()
@@ -38,6 +48,7 @@ public static class SceneGeometry
         CurrentMapKey = "";
         doors.Clear();
         doorState.Clear();
+        deconDoors.Clear();
     }
 
     /// Walks the scene and builds the model. Costs a few dozen milliseconds on the biggest map,
@@ -72,6 +83,25 @@ public static class SceneGeometry
             }
             catch { }
 
+            // The decon doors' colliders, by pointer. NOT reachable through AllDoors (see the
+            // deconDoors field comment); found through the DeconSystem components that own them.
+            var deconLookup = new HashSet<IntPtr>();
+            try
+            {
+                foreach (var ds in UnityEngine.Object.FindObjectsOfType<DeconSystem>())
+                {
+                    if (ds == null) continue;
+                    foreach (var d in new SomeKindaDoor[] { ds.UpperDoor, ds.LowerDoor })
+                    {
+                        if (d == null) continue;
+                        foreach (var c in d.GetComponentsInChildren<Collider2D>())
+                            if (c != null) deconLookup.Add(c.Pointer);
+                    }
+                }
+            }
+            catch { }
+
+            var deconCols = new Dictionary<int, Collider2D>();
             var colliders = UnityEngine.Object.FindObjectsOfType<Collider2D>();
             for (int i = 0; i < colliders.Length; i++)
             {
@@ -86,6 +116,8 @@ public static class SceneGeometry
 
                 if (doorLookup.TryGetValue(col.Pointer, out var owner) && owner != null)
                     doorSources[myId] = owner;
+                else if (deconLookup.Contains(col.Pointer))
+                    deconCols[myId] = col;
             }
 
             var rooms = ReadRooms(ship);
@@ -97,13 +129,16 @@ public static class SceneGeometry
 
             doors.Clear();
             doorState.Clear();
+            deconDoors.Clear();
             foreach (var kv in doorSources) doors.Add((kv.Value, kv.Key));
+            foreach (var kv in deconCols) deconDoors.Add((kv.Value, kv.Key));
 
             var ms = (DateTime.Now - started).TotalMilliseconds;
             NightfallPlugin.Logger?.LogInfo(
                 $"[Nightfall] Geometry for '{CurrentMapKey}' built in {ms:F0} ms: "
                 + $"{records.Count} colliders -> {model.Geometry.SegmentCount} segments, "
-                + $"{doors.Count} door colliders, grid {model.Geometry.GridWidth}x{model.Geometry.GridHeight}");
+                + $"{doors.Count} door colliders (+{deconDoors.Count} decon), "
+                + $"grid {model.Geometry.GridWidth}x{model.Geometry.GridHeight}");
             return true;
         }
         catch (Exception e)
@@ -118,22 +153,44 @@ public static class SceneGeometry
     /// dictionary compare makes that free when nothing has changed.
     public static void SyncDoors(Nightfall.Core.Scene3D scene = null)
     {
-        if (Current == null || doors.Count == 0) return;
+        if (Current == null || (doors.Count == 0 && deconDoors.Count == 0)) return;
         try
         {
             foreach (var (door, sourceId) in doors)
             {
                 if (door == null) continue;
-                bool open = door.IsOpen;
-                if (doorState.TryGetValue(sourceId, out bool was) && was == open) continue;
-                doorState[sourceId] = open;
-                Current.Geometry.SetSourceEnabled(sourceId, !open);
-                // A closed door is real geometry in the model and an open one is simply absent.
-                // That is the whole fix for being able to see through closed doors.
-                scene?.SetDoorOpen(sourceId, open);
+                ApplyDoorState(scene, sourceId, door.IsOpen);
+            }
+
+            // The decon doors have no IsOpen; the baked collider itself is the state. When
+            // DeconSystem opens the real door it disables exactly this collider, so "disabled"
+            // is "open" by definition - for the solid door panel and its shadow strip alike.
+            foreach (var (col, sourceId) in deconDoors)
+            {
+                if (col == null) continue;
+                bool open;
+                try { open = !col.enabled; } catch { continue; }
+                bool logged = doorState.TryGetValue(sourceId, out bool was) && was != open;
+                ApplyDoorState(scene, sourceId, open);
+                // Playtest evidence for the "decon door does not open" report: if these lines say
+                // OPEN while the picture still shows a wall, the remaining gap is the visual door
+                // panel match, not the state sync.
+                if (logged)
+                    NightfallPlugin.Logger?.LogInfo(
+                        $"[Nightfall] decon door source {sourceId} -> {(open ? "OPEN" : "CLOSED")}");
             }
         }
         catch { }
+    }
+
+    private static void ApplyDoorState(Nightfall.Core.Scene3D scene, int sourceId, bool open)
+    {
+        if (doorState.TryGetValue(sourceId, out bool was) && was == open) return;
+        doorState[sourceId] = open;
+        Current.Geometry.SetSourceEnabled(sourceId, !open);
+        // A closed door is real geometry in the model and an open one is simply absent.
+        // That is the whole fix for being able to see through closed doors.
+        scene?.SetDoorOpen(sourceId, open);
     }
 
     // ================================================================================

@@ -179,7 +179,19 @@ public static class WorldRelay
             shipRoot = ShipStatus.Instance != null ? ShipStatus.Instance.gameObject : null;
             hudRoot = HudManager.Instance != null ? HudManager.Instance.transform.root.gameObject : null;
 
-            var roots = SceneManager.GetActiveScene().GetRootGameObjects();
+            // NOT SceneManager.GetActiveScene().GetRootGameObjects(): that method is stripped from
+            // this Il2Cpp build, and Il2CppInterop cannot rebuild it - every call threw "Method
+            // unstripping failed" and took the WHOLE scan down with it (observed 2026-08-14: 76
+            // failures in one session, so the relay never saw a single object). Enumerating the
+            // transforms and keeping the parentless ones is the same set, through an API that
+            // survives stripping.
+            var roots = new List<GameObject>();
+            foreach (var t in UnityEngine.Object.FindObjectsOfType<Transform>())
+            {
+                if (t == null || t.parent != null) continue;
+                var go = t.gameObject;
+                if (go != null) roots.Add(go);
+            }
             var seen = new HashSet<int>();
 
             foreach (var go in roots)
