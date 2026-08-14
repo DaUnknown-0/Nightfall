@@ -50,7 +50,7 @@ public class NightfallPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.nightfall";
     public const string PluginName = "Nightfall";
-    public const string PluginVersion = "0.2.0.6";
+    public const string PluginVersion = "0.2.0.7";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     public static ManualLogSource Logger { get; private set; }
