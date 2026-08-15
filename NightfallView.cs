@@ -519,7 +519,11 @@ public static class NightfallView
                 Position = new NfVec2(pos.x, pos.y),
                 Facing = TrackFacing(p, pos),
                 Source = shot ?? (isWolf ? (IBillboardSource)wolfSprite : crewSprite),
-                Height = shot != null ? shot.WorldHeight * (isWolf ? 1.5f : 1f)
+                // AUDIT-2026-08-15: no extra 1.5x here for the photo path. Unknown's Collection already
+                // scales the player transform by 1.5x for the transformation, and AvatarCapture shoots the
+                // SpriteRenderer's world-space bounds, so WorldHeight has that factor baked in already.
+                // Only the procedural fallback below (no photo yet) still needs it applied by hand.
+                Height = shot != null ? shot.WorldHeight
                                       : (isWolf ? 1.08f : 0.72f),
                 Color = isWolf ? WerewolfSprite.Fur : ColorOf(p, false),
                 ShadowColor = isWolf ? WerewolfSprite.FurShadow : ColorOf(p, true),

@@ -743,11 +743,16 @@ public sealed class Raster3D
                                 IReadOnlyList<Billboard> list)
     {
         var eye = v.Position;
-        var order = new List<int>(list.Count);
-        for (int i = 0; i < list.Count; i++) order.Add(i);
-        order.Sort((x, y) => (list[y].Position - eye).SqrLength.CompareTo((list[x].Position - eye).SqrLength));
+        // Persistent buffer, same as propOrder above: this used to be a fresh List<int> plus a
+        // capturing sort lambda allocated every frame (AUDIT-2026-08-15).
+        billboardOrder.Clear();
+        for (int i = 0; i < list.Count; i++) billboardOrder.Add(i);
+        billboardSortList = list;
+        billboardSortEye = eye;
+        billboardSortComparison ??= CompareBillboardsBackToFront;   // one delegate for the whole run
+        billboardOrder.Sort(billboardSortComparison);
 
-        foreach (int idx in order)
+        foreach (int idx in billboardOrder)
         {
             var bb = list[idx];
             if (bb.Source == null || bb.Fade >= 1f) continue;
@@ -830,6 +835,19 @@ public sealed class Raster3D
             }
         }
     }
+
+    private readonly List<int> billboardOrder = new();
+    // `list` and `eye` held as fields, not lambda captures, so billboardSortComparison can be built
+    // once and reused every frame instead of closing over them per call (AUDIT-2026-08-15).
+    private IReadOnlyList<Billboard> billboardSortList;
+    private NfVec2 billboardSortEye;
+    private Comparison<int> billboardSortComparison;   // cached on first use, see DrawBillboards
+
+    // Back to front: the farther billboard is drawn first. A named instance method rather than a
+    // field initializer, which C# does not allow to read other instance fields.
+    private int CompareBillboardsBackToFront(int x, int y) =>
+        (billboardSortList[y].Position - billboardSortEye).SqrLength.CompareTo(
+        (billboardSortList[x].Position - billboardSortEye).SqrLength);
 
     // ================================================================================
     /*
