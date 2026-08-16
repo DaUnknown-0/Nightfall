@@ -71,6 +71,19 @@ public static class NightfallView
     private static int texW, texH;
     private static bool rawUploadFailed;
 
+    // AUDIT-2026-08-16: ArrowBehaviour and DeadBody instances are collected on the same
+    // ScanInterval-style cadence WorldRelay already uses for its own FindObjectsOfType sweep
+    // (see WorldRelay.ScanInterval), instead of every frame. Arrows only appear/disappear on task
+    // and sabotage state changes; bodies only appear on a kill and disappear at a meeting - both
+    // far coarser than a frame, so a quarter second of staleness in WHICH objects exist is
+    // invisible, unlike the per-frame FindObjectsOfType cost this replaces.
+    private const float ArrowScanInterval = 0.25f;
+    private const float BodyScanInterval = 0.25f;
+    private static readonly List<ArrowBehaviour> cachedArrows = new(16);
+    private static readonly List<DeadBody> cachedBodies = new(8);
+    private static float lastArrowScan = -99f;
+    private static float lastBodyScan = -99f;
+
     /// The world camera's own culling mask, kept so the game can have its world back.
     /// int.MinValue means "nothing saved yet" - 0 and -1 are both legitimate masks.
     private static int savedCullingMask = int.MinValue;
@@ -157,8 +170,17 @@ public static class NightfallView
         arrowMarkers.Clear();
         try
         {
-            foreach (var ab in UnityEngine.Object.FindObjectsOfType<ArrowBehaviour>())
+            if (Time.time - lastArrowScan >= ArrowScanInterval)
             {
+                lastArrowScan = Time.time;
+                cachedArrows.Clear();
+                foreach (var ab in UnityEngine.Object.FindObjectsOfType<ArrowBehaviour>())
+                    cachedArrows.Add(ab);
+            }
+
+            for (int i = 0; i < cachedArrows.Count; i++)
+            {
+                var ab = cachedArrows[i];
                 if (ab == null) continue;
                 var go = ab.gameObject;
                 if (go.layer != HiddenArrowLayer)
@@ -258,6 +280,14 @@ public static class NightfallView
         facings.Clear();
         lastPos.Clear();
         billboards.Clear();
+        // These hold references into the current scene (arrows, bodies); a stale entry after a
+        // lobby change or round end would point at objects that no longer exist. Clearing the scan
+        // clocks too, so the next Tick() re-scans immediately instead of waiting out the interval
+        // against a mostly-empty cache.
+        cachedArrows.Clear();
+        cachedBodies.Clear();
+        lastArrowScan = -99f;
+        lastBodyScan = -99f;
         AvatarCapture.Clear();
         WorldRelay.Clear();
         scene = null;
@@ -555,8 +585,17 @@ public static class NightfallView
         // during the wolf phase, so they are drawn low and wide rather than as a standing figure.
         try
         {
-            foreach (var body in UnityEngine.Object.FindObjectsOfType<DeadBody>())
+            if (Time.time - lastBodyScan >= BodyScanInterval)
             {
+                lastBodyScan = Time.time;
+                cachedBodies.Clear();
+                foreach (var body in UnityEngine.Object.FindObjectsOfType<DeadBody>())
+                    cachedBodies.Add(body);
+            }
+
+            for (int i = 0; i < cachedBodies.Count; i++)
+            {
+                var body = cachedBodies[i];
                 if (body == null) continue;
                 var bp = body.TruePosition;
                 var owner = Helpers_PlayerById(body.ParentId);

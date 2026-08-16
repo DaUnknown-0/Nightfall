@@ -166,6 +166,14 @@ public static class NightfallKeys
     private static readonly Dictionary<object, TMPro.TextMeshPro> labels = new();
     private static int lastButtonCount = -1;
 
+    // AUDIT-2026-08-16: Assign() ran every frame while NightfallPlugin.KeysAlwaysOn is true (the
+    // default), which is every round whether or not the first-person view is even on. A fresh
+    // HashSet<KeyCode> and List<object> per call was therefore not a rare cost but a standing one.
+    // Both are pure per-call scratch space - cleared at the top of Assign() and never read across
+    // frames - so they move here as reused buffers, same pattern as Raster3D's billboardOrder.
+    private static readonly HashSet<KeyCode> usedScratch = new();
+    private static readonly List<object> needsScratch = new();
+
     public static void Reset()
     {
         names.Clear();
@@ -212,8 +220,10 @@ public static class NightfallKeys
     /// so a clash is always resolved in favour of the button that is not being moved.
     private static void Assign(IList list)
     {
-        var used = new HashSet<KeyCode>();
-        var needs = new List<object>();
+        var used = usedScratch;
+        var needs = needsScratch;
+        used.Clear();
+        needs.Clear();
 
         // Pass 1 - the buttons the player is actually holding this frame, in list order.
         foreach (var b in list)

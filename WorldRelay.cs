@@ -85,6 +85,12 @@ public static class WorldRelay
         public readonly CapturedSprite Sprite = new();
         public float CapturedAt = -99f;
         public float LastSizeY;
+        // AUDIT-2026-08-16: the SpriteRenderers under Root, resolved once per Scan() (every
+        // ScanInterval) instead of once per Measure() call (every frame, for up to MaxRelayed
+        // entries). Only the structural membership (which renderers exist, on which layer) is
+        // cached here; enabled/sprite/alpha are still read fresh in Measure() every frame, because
+        // those flip mid-interval (a blink, a fade) without the object itself changing.
+        public readonly List<SpriteRenderer> Renderers = new();
     }
 
     private static readonly Dictionary<int, Entry> entries = new();
@@ -116,7 +122,7 @@ public static class WorldRelay
                 var root = e.Root;
                 if (root == null || !root.activeInHierarchy) continue;
 
-                if (!Measure(root, out var centre, out float sizeY, out float depth, out float alpha))
+                if (!Measure(e.Renderers, out var centre, out float sizeY, out float depth, out float alpha))
                     continue;
                 if (alpha <= 0.06f) continue;
 
@@ -207,6 +213,7 @@ public static class WorldRelay
                     entries[id] = e;
                 }
                 e.Root = go;
+                CacheRenderers(go, e.Renderers);
                 live.Add(e);
                 if (live.Count >= MaxRelayed) break;
             }
@@ -266,9 +273,31 @@ public static class WorldRelay
         return false;
     }
 
+    /// The SpriteRenderers under `go`, resolved once per Scan() and reused by Measure() every
+    /// frame in between. Layers 5 (UI) and 15 (UICollide) are filtered here, structurally, same as
+    /// HasWorldSprite; enabled/sprite/alpha are NOT filtered here on purpose (see the Entry field).
+    private static void CacheRenderers(GameObject go, List<SpriteRenderer> into)
+    {
+        into.Clear();
+        try
+        {
+            foreach (var r in go.GetComponentsInChildren<SpriteRenderer>(false))
+            {
+                if (r == null) continue;
+                int l = r.gameObject.layer;
+                if (l == 5 || l == 15) continue;
+                into.Add(r);
+            }
+        }
+        catch { }
+    }
+
     /// The object's world rectangle, its sort depth and its faintest-common alpha, in one pass.
-    private static bool Measure(GameObject go, out Vector2 centre, out float sizeY, out float depth,
-                                out float alpha)
+    /// Reads the renderer list Scan() cached on the entry instead of re-resolving it: this used to
+    /// be a GetComponentsInChildren call per relayed entry (up to MaxRelayed) EVERY FRAME, while
+    /// Scan() and Capture() next to it were already gated on ScanInterval/CaptureSpacing.
+    private static bool Measure(List<SpriteRenderer> renderers, out Vector2 centre, out float sizeY,
+                                out float depth, out float alpha)
     {
         centre = default; sizeY = 0f; depth = 0f; alpha = 0f;
         try
@@ -278,11 +307,11 @@ public static class WorldRelay
             float maxA = 0f, sumZ = 0f;
             int n = 0;
 
-            foreach (var r in go.GetComponentsInChildren<SpriteRenderer>(false))
+            for (int i = 0; i < renderers.Count; i++)
             {
+                var r = renderers[i];
+                // == null also catches renderers destroyed since the last scan (Unity's overload).
                 if (r == null || !r.enabled || r.sprite == null) continue;
-                int l = r.gameObject.layer;
-                if (l == 5 || l == 15) continue;
                 float a = r.color.a;
                 if (a < 0.06f) continue;
                 if (!any) { b = r.bounds; any = true; } else b.Encapsulate(r.bounds);
