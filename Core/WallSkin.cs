@@ -1,4 +1,4 @@
-// Nightfall - Copyright (C) 2026 DaUnknown-0
+﻿// Nightfall - Copyright (C) 2026 DaUnknown-0
 // Licensed under GPL-3.0-or-later. See LICENSE for details.
 
 /*
@@ -169,10 +169,17 @@ public static class WallSkin
                          : v < 0.82f ? mainC[x]
                          : NfColor.Lerp(mainC[x], darkC[x], NfMath.Clamp01((v - 0.82f) / 0.18f));
 
+                // ToByteRAW, not ToByte (AUDIT-2026-08-23, L-26): this is TEXTURE data, and
+                // ToByte carries the torch's highlight-compression curve, which belongs at
+                // the very end of the pipeline where a LIT value becomes a pixel. Applied
+                // here it darkened every source value above 0.75 - up to 12.5% at full
+                // white - and then the renderer applied the same curve again to the lit
+                // result. Bright wall and prop surfaces came out muddy for no reason, and
+                // ToByteRaw's own doc comment already said which one belongs here.
                 int o = (y * w + x) * 4;
-                px[o] = NfMath.ToByte(sr * tone.R);
-                px[o + 1] = NfMath.ToByte(sg * tone.G);
-                px[o + 2] = NfMath.ToByte(sb * tone.B);
+                px[o] = NfMath.ToByteRaw(sr * tone.R);
+                px[o + 1] = NfMath.ToByteRaw(sg * tone.G);
+                px[o + 2] = NfMath.ToByteRaw(sb * tone.B);
                 // Alpha is the TINT MASK, not opacity. These colours are already the wall's own, so
                 // it is zero everywhere: nothing here may be recoloured a second time.
                 px[o + 3] = 0;

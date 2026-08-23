@@ -1,4 +1,4 @@
-// Nightfall - Copyright (C) 2026 DaUnknown-0
+﻿// Nightfall - Copyright (C) 2026 DaUnknown-0
 // Licensed under GPL-3.0-or-later. See LICENSE for details.
 
 /*
@@ -109,6 +109,43 @@ public static class NightfallKeys
         KeyCode.LeftBracket, KeyCode.RightBracket, KeyCode.Slash, KeyCode.Minus, KeyCode.Equals,
     };
 
+    // Preferred entries that have actually been matched to a live button at least once, and the
+    // one-shot report over what never was.
+    //
+    // WHY (AUDIT-2026-08-23, M-17): a Preferred key is a plain string - "DeclaringTypeName.field" -
+    // matched against what the reflection scan finds at runtime. Nothing checks that the two ever
+    // meet, so a renamed field, a moved class, or simply a wrong guess at the declaring type just
+    // means the entry silently does nothing and its button falls back into the shared pool, moving
+    // between keys from round to round. The 2026-08-23 audit reported exactly that for the three
+    // TOR entries (it read "Buttons.cs" as a class name, while the fields really do live in
+    // HudManagerStartPatch, so those five are fine) - but the reason it was impossible to settle
+    // from the code alone is that the failure has no symptom. Now it says so, once, in the log.
+    private static readonly HashSet<string> seenPreferred = new();
+    private static bool preferredReported;
+
+    private static void ReportUnmatchedPreferred()
+    {
+        if (preferredReported) return;
+        // Only judge once a real round is running and buttons exist; in the lobby nothing matches
+        // simply because nothing is on screen yet.
+        if (seenPreferred.Count == 0) return;
+        preferredReported = true;
+        try
+        {
+            List<string> missing = null;
+            foreach (var id in Preferred.Keys)
+                if (!seenPreferred.Contains(id)) (missing ??= new List<string>()).Add(id);
+            if (missing == null) return;
+            NightfallPlugin.Logger?.LogWarning(
+                "[NightfallKeys] preferred key entries that matched no button this round: "
+                + string.Join(", ", missing)
+                + " - the id is \"DeclaringType.fieldName\", so a mismatch usually means the field was "
+                + "renamed or moved. Those buttons keep whatever key their own mod gave them and may "
+                + "move between rounds.");
+        }
+        catch { }
+    }
+
     /*
      * THE FIXED PART OF THE REGISTRY. Everything in here is a button that either had no key at all
      * or shares one with something the same player can hold at the same time; the assignment is
@@ -205,6 +242,25 @@ public static class NightfallKeys
                 Prune();
             }
 
+            // TYPING IS NOT PLAYING (AUDIT-2026-08-23, L-25).
+            // TOR fires an ability straight off the keyboard - `if (hotkey.HasValue &&
+            // Input.GetKeyDown(hotkey.Value)) onClickEvent();` (CustomButton.cs:262) - with no check
+            // for whether a text field has focus. That has always been true, but it barely showed
+            // while the keys were Q and F. This layer deliberately moves buttons onto V, B, N, M and
+            // X, which is to say onto letters people type constantly, and "vent" or "maybe" in the
+            // chat would set off whatever ability happens to sit on those letters.
+            //
+            // So while the chat has focus, every button this layer manages is written to None: TOR's
+            // GetKeyDown then matches nothing. The next frame after the chat closes, Assign hands the
+            // real keys back - it runs every frame and is idempotent. Label is skipped rather than
+            // run with the blanked keys, so the printed key stays on the button and the player is
+            // not told their key disappeared.
+            if (ChatHasFocus())
+            {
+                Blank(list);
+                return;
+            }
+
             Assign(list);
             if (NightfallPlugin.ShowKeyOnButton?.Value ?? true) Label(list);
         }
@@ -213,6 +269,31 @@ public static class NightfallKeys
             unavailable = true;
             NightfallPlugin.Logger?.LogWarning(
                 $"[Nightfall] Hotkey layer switched off after an error: {e.Message}");
+        }
+    }
+
+    /// True while the chat input has focus, so keystrokes belong to the text field and to nothing
+    /// else. Defensive throughout: any part of the chain missing simply means "not typing", which
+    /// keeps the hotkeys working rather than switching them off for good.
+    private static bool ChatHasFocus()
+    {
+        try
+        {
+            var chat = HudManager.Instance?.Chat;
+            return chat != null && chat.IsOpenOrOpening;
+        }
+        catch { return false; }
+    }
+
+    /// Blanks the hotkey of every button this layer knows about. `assigned` is deliberately left
+    /// alone: it is the record of what each button SHOULD have, and Assign restores from it as soon
+    /// as the chat closes.
+    private static void Blank(IList list)
+    {
+        foreach (var b in list)
+        {
+            if (b == null) continue;
+            try { Write(b, KeyCode.None); } catch { }
         }
     }
 
@@ -237,6 +318,7 @@ public static class NightfallKeys
                 assigned[b] = want;
                 Write(b, want);
                 used.Add(want);
+                seenPreferred.Add(id);
                 continue;
             }
 
@@ -250,6 +332,8 @@ public static class NightfallKeys
             if (own.HasValue && own.Value != KeyCode.None && used.Add(own.Value)) continue;
             needs.Add(b);
         }
+
+        ReportUnmatchedPreferred();
 
         // Pass 2 - whoever is left gets the first free key nobody is holding this frame.
         foreach (var b in needs)

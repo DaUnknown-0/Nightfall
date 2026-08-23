@@ -1,4 +1,4 @@
-// Nightfall - Copyright (C) 2026 DaUnknown-0
+﻿// Nightfall - Copyright (C) 2026 DaUnknown-0
 // Licensed under GPL-3.0-or-later. See LICENSE for details.
 
 /*
@@ -175,6 +175,8 @@ public sealed class Raster3D
         // whole first playtest was played with empty hands. It is not decoration: the torch LEANS
         // towards where the beam points, and that lean is the only thing that says the mouse aims
         // the light rather than the head.
+        // Keep the shared helper in step with this renderer's own threading switch (AUDIT L-27).
+        HandLight.Multithreaded = Multithreaded;
         if (v.PredatorVision) HandLight.PredatorTint(Pixels);
         HandLight.Draw(Pixels, Width, Height, v);
         HandLight.Vignette(Pixels, Width, Height);
@@ -372,7 +374,14 @@ public sealed class Raster3D
 
         var voidCol = new NfColor(0.020f, 0.014f, 0.035f);
 
-        Parallel.For(0, Height, y =>
+        // Honours this renderer's own Multithreaded flag (AUDIT-2026-08-23, L-27). This one loop
+        // called Parallel.For unconditionally while every other parallel site in the file gates on
+        // the flag, so turning threading off - for a deterministic frame, or on a single core - left
+        // the whole sky and floor background still running across cores.
+        if (!Multithreaded) { for (int y = 0; y < Height; y++) DrawBackgroundRow(y); return; }
+        Parallel.For(0, Height, DrawBackgroundRow);
+
+        void DrawBackgroundRow(int y)
         {
             int rowBase = y * Width;
             if (y > horizon)
@@ -411,7 +420,7 @@ public sealed class Raster3D
                 depth[rowBase + x] = float.MaxValue;
                 new NfColor(rr, gg, bb).ToBytes(Pixels, (rowBase + x) * 4);
             }
-        });
+        }
     }
 
     // ================================================================================

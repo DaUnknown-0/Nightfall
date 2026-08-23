@@ -1,4 +1,4 @@
-// Nightfall - Copyright (C) 2026 DaUnknown-0
+﻿// Nightfall - Copyright (C) 2026 DaUnknown-0
 // Licensed under GPL-3.0-or-later. See LICENSE for details.
 
 /*
@@ -175,6 +175,8 @@ public static class NightfallOptions
             if (option == null || fSelection == null)
                 throw new MissingMemberException("CustomOption.selection");
 
+            MoveToEndOfOptionList(customOption);
+
             NightfallPlugin.Logger?.LogInfo(
                 $"[Nightfall] 3D Mode registered as TOR option {OptionId} (host-synchronised).");
         }
@@ -186,6 +188,47 @@ public static class NightfallOptions
                 $"[Nightfall] Could not register the 3D Mode option with The Other Roles "
                 + $"({e.Message}). Falling back to the local config entry, which is NOT shared "
                 + "with the lobby.");
+        }
+    }
+
+    /*
+     * PUT THIS OPTION LAST, ON PURPOSE (AUDIT-2026-08-23, M-19).
+     *
+     * The host shares every option through TOR's ShareOptionSelections, which walks
+     * CustomOption.options IN ORDER and packs up to 200 of them into one RPC
+     * (CustomOptions.cs:153-170). The receiving end resolves each id with
+     *     CustomOption.options.First(o => o.id == optionId)
+     * (RPC.cs:208) - and .First() THROWS when nothing matches. That whole loop sits inside a single
+     * try/catch, so on a client that does not have Nightfall, hitting option 1700 does not merely
+     * skip it: it aborts the batch and silently discards every option that came AFTER it. The lobby
+     * then plays with the host's settings for the first half of the list and the client's own
+     * defaults for the rest, with nothing but one line in the TOR log to show for it.
+     *
+     * Being last makes that harmless - the only option lost to the throw is this one, which such a
+     * client has no use for anyway. Registration order alone cannot guarantee it: several mods
+     * register from MainMenuManager.Start and the order between assemblies is undefined. So instead
+     * of hoping, the entry is moved to the end of the list explicitly, the same way UTS reorders its
+     * own options. TOR's own .First() stays untouched; it is noted in the known-issues list.
+     */
+    private static void MoveToEndOfOptionList(Type customOption)
+    {
+        try
+        {
+            var fOptions = customOption.GetField("options", BindingFlags.Public | BindingFlags.Static);
+            if (fOptions?.GetValue(null) is not System.Collections.IList list) return;
+            int idx = list.IndexOf(option);
+            if (idx < 0 || idx == list.Count - 1) return;   // absent, or already last
+            list.RemoveAt(idx);
+            list.Add(option);
+        }
+        catch (Exception e)
+        {
+            // Not fatal: the option still works, it just sits wherever it was registered, which is
+            // the behaviour this mod shipped with.
+            NightfallPlugin.Logger?.LogWarning(
+                $"[Nightfall] Could not move the 3D Mode option to the end of TOR's option list "
+                + $"({e.Message}). A client without Nightfall may lose the options that follow it "
+                + "in the host's settings broadcast.");
         }
     }
 }

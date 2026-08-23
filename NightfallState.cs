@@ -1,4 +1,4 @@
-// Nightfall - Copyright (C) 2026 DaUnknown-0
+﻿// Nightfall - Copyright (C) 2026 DaUnknown-0
 // Licensed under GPL-3.0-or-later. See LICENSE for details.
 
 /*
@@ -524,12 +524,17 @@ public static class NightfallHandshake
 [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.HandleRpc))]
 internal static class NightfallRpcPatch
 {
-    public static void Postfix([HarmonyArgument(0)] byte callId, [HarmonyArgument(1)] MessageReader reader)
+    // The announcing player is taken from __instance (the PlayerControl the RPC was routed to),
+    // NOT from the payload byte: a client that writes someone else's id into the payload would
+    // otherwise register that player as "has the mod" and open the fairness gate for a lobby that
+    // does not actually have it. The payload byte is still written by Announce() for wire
+    // compatibility with older builds; it is deliberately not read here.
+    public static void Postfix(PlayerControl __instance, [HarmonyArgument(0)] byte callId)
     {
         try
         {
-            if (callId != NightfallHandshake.CallId) return;
-            NightfallHandshake.Receive(reader.ReadByte());
+            if (callId != NightfallHandshake.CallId || __instance == null) return;
+            NightfallHandshake.Receive(__instance.PlayerId);
         }
         catch { }
     }

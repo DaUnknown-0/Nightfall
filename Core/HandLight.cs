@@ -1,4 +1,4 @@
-// Nightfall - Copyright (C) 2026 DaUnknown-0
+﻿// Nightfall - Copyright (C) 2026 DaUnknown-0
 // Licensed under GPL-3.0-or-later. See LICENSE for details.
 
 /*
@@ -18,6 +18,27 @@ namespace Nightfall.Core;
 
 public static class HandLight
 {
+    /// Whether the two full-screen passes below may spread across cores (AUDIT-2026-08-23, L-27).
+    ///
+    /// Both renderers have their own `Multithreaded` field and honour it everywhere except here:
+    /// these passes are static helpers and called Parallel.For unconditionally, so switching
+    /// threading off for debugging or on a single-core machine left two full-screen loops still
+    /// running parallel - exactly the case where a reproducible frame matters most. The renderers
+    /// now mirror their own flag into this one before drawing.
+    public static bool Multithreaded = true;
+
+    /// Runs `body` over 0..count, honouring Multithreaded. Small counts stay serial regardless -
+    /// the same threshold FrameRenderer.RunParallel uses, for the same reason.
+    private static void ForRows(int count, System.Action<int> body)
+    {
+        if (!Multithreaded || count < 64)
+        {
+            for (int i = 0; i < count; i++) body(i);
+            return;
+        }
+        System.Threading.Tasks.Parallel.For(0, count, body);
+    }
+
     // ================================================================================
     /// The flashlight body at the bottom right, drawn in screen space because it is held, not
     /// placed. It swings slightly with the beam, which is what tells the player that the mouse
@@ -180,7 +201,7 @@ public static class HandLight
         float q0 = e0 * e0, q1 = e1 * e1;
         float inv = 1f / (q1 - q0);
 
-        System.Threading.Tasks.Parallel.For(0, Height, y =>
+        ForRows(Height, y =>
         {
             float dy = (y - cy) / maxR;
             float dy2 = dy * dy;
@@ -207,7 +228,7 @@ public static class HandLight
         var hot = new NfColor(1.15f, 0.30f, 0.22f);
         var cold = new NfColor(0.10f, 0.09f, 0.16f);
 
-        System.Threading.Tasks.Parallel.For(0, Pixels.Length / 4, j =>
+        ForRows(Pixels.Length / 4, j =>
         {
             int i = j * 4;
             float r = Pixels[i] / 255f, g = Pixels[i + 1] / 255f, b = Pixels[i + 2] / 255f;

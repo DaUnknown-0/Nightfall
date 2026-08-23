@@ -1,4 +1,4 @@
-// Nightfall - Copyright (C) 2026 DaUnknown-0
+﻿// Nightfall - Copyright (C) 2026 DaUnknown-0
 // Licensed under GPL-3.0-or-later. See LICENSE for details.
 
 /*
@@ -85,6 +85,26 @@ public enum SurfaceKind : byte
     Count
 }
 
+/// One caller's footprint tracking for Surface.Sample - the state that used to sit on the shared
+/// Surface and race between render threads (AUDIT-2026-08-23, M-20).
+///
+/// Declare ONE of these per worker (per Parallel.For body invocation, per single-threaded loop) and
+/// pass it by ref through the whole run of samples that belong together. Sample derives the texture
+/// footprint from the step between consecutive uv, so the state only makes sense within one such
+/// run: sharing it between two threads mixes their steps and picks the wrong mip level, and giving
+/// a fresh one to every single sample degrades the first sample of each run to the default footprint.
+///
+/// The default (AlongRun = 1) is what a fresh sampler assumes before it has seen a second uv.
+public struct SamplerState
+{
+    public float LastU, LastV;
+    public float AlongRun;
+    public float AcrossRun;
+    public bool InColumn;
+
+    public static SamplerState Fresh => new SamplerState { AlongRun = 1f };
+}
+
 public sealed class Surface
 {
     public SurfaceKind Kind;
@@ -117,11 +137,16 @@ public sealed class Surface
     private int[] mipShift;
     private int maxLevel;
 
-    /// The last uv this surface was asked for, and the two footprints that followed from it. See
-    /// Sample: `alongRun` is measured between consecutive pixels of a wall column or a floor row,
-    /// `acrossRun` between one wall column and the next.
-    private float lastU, lastV, alongRun = 1f, acrossRun;
-    private bool inColumn;
+    // The sampler's footprint tracking used to live HERE, as five mutable fields on the Surface
+    // itself - and a Surface is shared: TextureBank.Get hands the same instance to every caller.
+    // FrameRenderer draws its wall columns through Parallel.For (RunParallel, and Multithreaded
+    // defaults to true), so several threads were writing lastU/lastV/alongRun/acrossRun/inColumn at
+    // once. The consequence is not a crash but a wrong mip level - non-deterministic shimmer that
+    // changes between runs and cannot be reproduced on a single core (AUDIT-2026-08-23, M-20).
+    //
+    // The state now belongs to the CALLER, one per worker, passed by ref. Raster3D never needed it
+    // (it derives the footprint analytically), which is why the in-game path never showed this.
+    // See SamplerState below and Sample's own comment for what the fields mean.
 
     /// Level 0 as plain floats in 0..1, row-major RGB - the shape this class used to store outright.
     ///
@@ -179,11 +204,11 @@ public sealed class Surface
     /// they are recognisable because v wraps from the bottom of the wall back to the top. A floor
     /// row is the other case: there u advances per pixel like v does, so one step already carries
     /// both axes and the remembered column step must be dropped.
-    public void Sample(float u, float v, out float r, out float g, out float b)
+    public void Sample(float u, float v, ref SamplerState st, out float r, out float g, out float b)
     {
-        float du = u - lastU; if (du < 0f) du = -du;
-        float dv = v - lastV; if (dv < 0f) dv = -dv;
-        lastU = u; lastV = v;
+        float du = u - st.LastU; if (du < 0f) du = -du;
+        float dv = v - st.LastV; if (dv < 0f) dv = -dv;
+        st.LastU = u; st.LastV = v;
         // uv arrives already wrapped into 0..1, so a step across a tile border reads as 0,98 rather
         // than as 0,02 and the footprint comes out fifty times too large. That is one poisoned
         // column per tile repeat, and on a wall it drew a vertical stripe every WorldScale units,
@@ -195,32 +220,32 @@ public sealed class Surface
         {
             // Still walking down a wall column: u is literally the same float, which makes this an
             // exact test rather than a guess at a threshold.
-            if (dv > 0f && dv < 0.25f) alongRun = dv * Size;
-            inColumn = true;
+            if (dv > 0f && dv < 0.25f) st.AlongRun = dv * Size;
+            st.InColumn = true;
         }
-        else if (inColumn)
+        else if (st.InColumn)
         {
             // The step that leaves a wall column. Whatever u did across it is how far the texture
             // slides sideways per screen column, and no guard on its size: a step too big to
             // believe saturates the mip chain, which for this axis is the right answer anyway.
-            acrossRun = du * Size;
-            inColumn = false;
+            st.AcrossRun = du * Size;
+            st.InColumn = false;
         }
         else if (du < 0.25f && dv < 0.25f)
         {
             // A floor row. Both axes advance per pixel here, so one step carries the whole
             // footprint and any column step remembered from a wall is stale.
-            alongRun = (du > dv ? du : dv) * Size;
-            acrossRun = 0f;
+            st.AlongRun = (du > dv ? du : dv) * Size;
+            st.AcrossRun = 0f;
         }
 
         // A wall column addresses v from the top of the wall to the bottom, ONCE, so wrapping v
         // would fold the ceiling row into the floor row. On a 256 texture that is half a texel and
         // nobody sees it; four mip levels down it is an eighth of the wall height and a bright band
         // along the skirting. Whether this is a wall is exactly what acrossRun records.
-        bool wall = acrossRun > 0f;
+        bool wall = st.AcrossRun > 0f;
 
-        float dens = alongRun > acrossRun ? alongRun : acrossRun;
+        float dens = st.AlongRun > st.AcrossRun ? st.AlongRun : st.AcrossRun;
         if (dens <= 1f)
         {
             // Magnification. Plain bilinear here would be the mush this whole file is trying to get
@@ -345,10 +370,14 @@ public sealed class Surface
         }
     }
 
+    // ToByteRAW (AUDIT-2026-08-23, L-26). Pack stores the mip chain, i.e. pure source colour;
+    // ToByte's highlight compression belongs where a LIT value becomes a pixel, which happens much
+    // later in the renderer. Applying it here darkened every texel above 0.75 before lighting had
+    // even been considered, and then the same curve ran a second time on the result.
     private void Pack(int level, float[] rgb, int n)
     {
         int o = mipOffset[level];
-        for (int i = 0; i < n * n * 3; i++) texels[o + i] = NfMath.ToByte(rgb[i]);
+        for (int i = 0; i < n * n * 3; i++) texels[o + i] = NfMath.ToByteRaw(rgb[i]);
     }
 }
 

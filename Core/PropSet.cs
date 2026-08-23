@@ -1,4 +1,4 @@
-// Nightfall - Copyright (C) 2026 DaUnknown-0
+﻿// Nightfall - Copyright (C) 2026 DaUnknown-0
 // Licensed under GPL-3.0-or-later. See LICENSE for details.
 
 /*
@@ -245,11 +245,16 @@ public static class PropSet
                     int to = (ty * w + tx) * 4;
                     float da = px[to + 3] / 255f;
                     float outA = a + da * (1f - a);
+                    // ToByteRAW for both (AUDIT-2026-08-23, L-26). The colour channels are
+                    // texture data - see WallSkin's note - and the alpha is a COVERAGE value, which
+                    // a highlight-compression curve has no business touching at all: a fully opaque
+                    // prop pixel came out at 0xF2 instead of 0xFF and blended a little of whatever
+                    // was behind it.
                     for (int c = 0; c < 3; c++)
-                        px[to + c] = NfMath.ToByte(
+                        px[to + c] = NfMath.ToByteRaw(
                             (p.Rgba[so + c] / 255f * a + px[to + c] / 255f * da * (1f - a))
                             / MathF.Max(0.0001f, outA));
-                    px[to + 3] = NfMath.ToByte(outA);
+                    px[to + 3] = NfMath.ToByteRaw(outA);
                 }
             }
         }

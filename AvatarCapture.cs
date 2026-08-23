@@ -1,4 +1,4 @@
-// Nightfall - Copyright (C) 2026 DaUnknown-0
+﻿// Nightfall - Copyright (C) 2026 DaUnknown-0
 // Licensed under GPL-3.0-or-later. See LICENSE for details.
 
 /*
@@ -335,6 +335,14 @@ public static class AvatarCapture
         }
         catch (Exception ex)
         {
+            // Stamp the attempt even though it failed (AUDIT M-18) - the same line WorldRelay's
+            // capture already carries. Without it the staleness gate below (Time.time - CapturedAt >
+            // RefreshSeconds) stays true forever, so a permanently failing capture - a MissingMethod
+            // after an Among Us update is the obvious way to get one - re-ran the FULL capture path
+            // and wrote this warning every single frame, for every player, for the whole round.
+            // With the stamp a broken capture retries once per RefreshSeconds and the log stays
+            // readable enough to actually notice it.
+            e.CapturedAt = Time.time;
             NightfallPlugin.Logger?.LogWarning($"[Nightfall] Avatar capture failed: {ex.Message}");
             return false;
         }

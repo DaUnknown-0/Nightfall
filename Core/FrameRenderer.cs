@@ -1,4 +1,4 @@
-// Nightfall - Copyright (C) 2026 DaUnknown-0
+﻿// Nightfall - Copyright (C) 2026 DaUnknown-0
 // Licensed under GPL-3.0-or-later. See LICENSE for details.
 
 /*
@@ -242,6 +242,8 @@ public sealed class FrameRenderer
         DrawWalls(map, view, projScale, horizon);
         if (billboards != null && billboards.Count > 0)
             DrawBillboards(map, view, dir, plane, projScale, horizon, billboards);
+        // Keep the shared helper in step with this renderer's own threading switch (AUDIT L-27).
+        HandLight.Multithreaded = Multithreaded;
         if (view.PredatorVision) HandLight.PredatorTint(Pixels);
         DrawHeldLight(view);
         DrawVignette();
@@ -290,6 +292,12 @@ public sealed class FrameRenderer
             var atlas = map.Atlas;
             bool useAtlas = atlas != null && atlas.IsValid;
 
+            // One sampler state per ROW, owned by this call (AUDIT M-20). A row is exactly one
+            // coherent run of samples - the footprint Sample derives comes from the step between
+            // consecutive pixels of this row - and rows are what the parallel split hands out, so
+            // no two threads can ever touch the same state.
+            var floorSampler = SamplerState.Fresh;
+
             for (int x = 0; x < Width; x++, wx += stepX, wy += stepY)
             {
                 var wp = new NfVec2(wx, wy);
@@ -300,7 +308,7 @@ public sealed class FrameRenderer
                     var surf = TextureBank.Get(map.FloorAt(wp));
                     float u = wx / surf.WorldScale;
                     float v = wy / surf.WorldScale;
-                    surf.Sample(u - MathF.Floor(u), v - MathF.Floor(v), out r, out g, out b);
+                    surf.Sample(u - MathF.Floor(u), v - MathF.Floor(v), ref floorSampler, out r, out g, out b);
                 }
 
                 // Floors are lit a touch darker than walls: the torch points forward, not down, and
@@ -334,6 +342,9 @@ public sealed class FrameRenderer
             float stepY = (worldRight.Y - worldLeft.Y) / Width;
             float wx = worldLeft.X, wy = worldLeft.Y;
 
+            // Per-row sampler state, same reasoning as the floor row above (AUDIT M-20).
+            var ceilingSampler = SamplerState.Fresh;
+
             for (int x = 0; x < Width; x++, wx += stepX, wy += stepY)
             {
                 var wp = new NfVec2(wx, wy);
@@ -346,7 +357,8 @@ public sealed class FrameRenderer
                 }
                 var surf = TextureBank.Get(SurfaceKind.MetalPanel);
                 float u = wx / (surf.WorldScale * 2f), v = wy / (surf.WorldScale * 2f);
-                surf.Sample(u - MathF.Floor(u), v - MathF.Floor(v), out float r, out float g, out float b);
+                surf.Sample(u - MathF.Floor(u), v - MathF.Floor(v), ref ceilingSampler,
+                            out float r, out float g, out float b);
                 float lit = LightAt(view, coneFactor[x], rowDistance) * 0.45f;
                 var c = ApplyFog(new NfColor(r * lit, g * lit, b * lit), rowDistance, view);
                 c.ToBytes(Pixels, (rowBase + x) * 4);
@@ -424,14 +436,14 @@ public sealed class FrameRenderer
     private void DrawWalls(MapModel map, in ViewParams view, float projScale, float horizon)
     {
         var v = view;                                  // `in` cannot be captured by a lambda
-        RunParallel(Width, x =>
+        RunParallelWithSampler(Width, (x, sampler) =>
         {
             if (hasWall[x])
                 DrawWallColumn(map, v, x, wallHits[x], wallHits[x].Distance, rayLen[x],
-                               projScale, horizon, v.WallHeight, isLow: false);
+                               projScale, horizon, v.WallHeight, isLow: false, sampler);
             if (hasLow[x])
                 DrawWallColumn(map, v, x, lowHits[x], lowHits[x].Distance, rayLen[x],
-                               projScale, horizon, v.LowHeight, isLow: true);
+                               projScale, horizon, v.LowHeight, isLow: true, sampler);
         });
     }
 
@@ -447,9 +459,39 @@ public sealed class FrameRenderer
         Parallel.For(0, count, body);
     }
 
+    /// A mutable SamplerState with an identity, so a worker can carry it from one wall column to
+    /// the next. A bare struct cannot be captured by a lambda and passed by ref; a one-field class
+    /// can, and it is allocated once per WORKER, not per column.
+    private sealed class SamplerBox { public SamplerState S = SamplerState.Fresh; }
+
+    /// RunParallel for work that samples textures (AUDIT-2026-08-23, M-20).
+    ///
+    /// Surface.Sample derives its texture footprint from the step between consecutive uv, and for
+    /// wall columns the horizontal half of that footprint is measured BETWEEN columns - so the state
+    /// has to survive from one column to the next, and may not be shared between threads. Both at
+    /// once is exactly what a thread-local gives: Parallel.For hands each worker its own box via
+    /// localInit and keeps it for the whole range that worker processes.
+    ///
+    /// The remaining imprecision is at partition boundaries, where a worker's first column has no
+    /// predecessor and falls back to the default footprint - one column per worker, against the
+    /// previous behaviour of every thread corrupting every other thread's measurement.
+    private void RunParallelWithSampler(int count, Action<int, SamplerBox> body)
+    {
+        if (!Multithreaded || count < 64)
+        {
+            var single = new SamplerBox();
+            for (int i = 0; i < count; i++) body(i, single);
+            return;
+        }
+        Parallel.For(0, count,
+                     () => new SamplerBox(),
+                     (i, _, box) => { body(i, box); return box; },
+                     _ => { });
+    }
+
     private void DrawWallColumn(MapModel map, in ViewParams view, int x, in RayHit hit, float perpDist,
                                 float rayLen, float projScale, float horizon,
-                                float wallHeight, bool isLow)
+                                float wallHeight, bool isLow, SamplerBox sampler)
     {
         if (perpDist < 0.01f) perpDist = 0.01f;
 
@@ -525,7 +567,7 @@ public sealed class FrameRenderer
             float v = (y - top) / MathF.Max(1e-4f, span);
             if (v < 0f || v > 1f) continue;
 
-            surf.Sample(u, v, out float r, out float g, out float b);
+            surf.Sample(u, v, ref sampler.S, out float r, out float g, out float b);
 
             if (tinted)
             {
@@ -554,21 +596,37 @@ public sealed class FrameRenderer
     // ================================================================================
     // 3. Billboards
     // ================================================================================
+    // `list` and `eye` are held as fields, not lambda captures, so billboardSortComparison can be
+    // built once instead of once per frame. Mirrors Raster3D's own billboard sort.
+    private readonly List<int> billboardOrder = new List<int>();
+    private IReadOnlyList<Billboard> billboardSortList;
+    private NfVec2 billboardSortEye;
+    private Comparison<int> billboardSortComparison;
+
+    private int CompareBillboardsBackToFront(int x, int y) =>
+        (billboardSortList[y].Position - billboardSortEye).SqrLength.CompareTo(
+        (billboardSortList[x].Position - billboardSortEye).SqrLength);
+
     private void DrawBillboards(MapModel map, in ViewParams view, NfVec2 dir, NfVec2 plane,
                                 float projScale, float horizon, IReadOnlyList<Billboard> list)
     {
-        // Back to front, so a nearer crewmate covers a further one. `view` is an `in` parameter and
-        // cannot be captured by the comparison lambda, so the eye position is copied out first.
-        var eye = view.Position;
-        var order = new List<int>(list.Count);
-        for (int i = 0; i < list.Count; i++) order.Add(i);
-        order.Sort((a, b) =>
-            (list[b].Position - eye).SqrLength.CompareTo(
-            (list[a].Position - eye).SqrLength));
+        // Back to front, so a nearer crewmate covers a further one.
+        //
+        // Persistent buffer and a cached comparison delegate (AUDIT-2026-08-23, L-27) - the same
+        // shape Raster3D.DrawBillboards already uses. This used to allocate a fresh List<int> AND a
+        // capturing sort lambda on every single frame; the capture is what made it unavoidable, so
+        // the two captured values (the list and the eye) are held as fields instead and the
+        // delegate is built once for the whole run.
+        billboardSortList = list;
+        billboardSortEye = view.Position;
+        billboardOrder.Clear();
+        for (int i = 0; i < list.Count; i++) billboardOrder.Add(i);
+        billboardSortComparison ??= CompareBillboardsBackToFront;
+        billboardOrder.Sort(billboardSortComparison);
 
         float invDet = 1f / (plane.X * dir.Y - dir.X * plane.Y);
 
-        foreach (int idx in order)
+        foreach (int idx in billboardOrder)
         {
             var bb = list[idx];
             if (bb.Source == null || bb.Fade >= 1f) continue;
