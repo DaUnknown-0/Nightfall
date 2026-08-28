@@ -160,7 +160,8 @@ public static class NightfallState
                 lastLoggedMap = model.MapKey;
                 NightfallPlugin.Logger?.LogInfo(
                     $"[Nightfall] '{model.MapKey}' has no described world - the first-person view "
-                    + "stays off on this map. Only Polus is built; see MapAreaRegistry.AppliesTo.");
+                    + "stays off on this map. Polus, Mira HQ and the Skeld are built; see "
+                    + "MapAreaRegistry.AppliesTo.");
             }
             return ok;
         }

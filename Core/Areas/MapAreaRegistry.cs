@@ -21,8 +21,8 @@ namespace Nightfall.Core;
 /// any more, now that Scene3D, NightfallState and the render tool go through the registry instead.
 /// Relying on "PolusAreas registers itself" would mean it only happens if some unrelated code path
 /// references the type first, and under IL2CPP/BepInEx's own loading order that is not a guarantee
-/// worth building on. Two maps do not need a general self-registration mechanism; they need this list
-/// to be right, so it is written by hand, here.
+/// worth building on. Three maps do not need a general self-registration mechanism; they need this
+/// list to be right, so it is written by hand, here.
 public static class MapAreaRegistry
 {
     private sealed class Entry
@@ -43,6 +43,17 @@ public static class MapAreaRegistry
             KeyFragment = "polus",
             Build = PolusAreas.Build,
             BuildExterior = (b, x0, y0, x1, y1) => b.BuildPlanet(x0, y0, x1, y1),
+        },
+        new Entry
+        {
+            KeyFragment = "mira",
+            Build = MiraAreas.Build,
+            // No BuildExterior either, for a different reason than the Skeld's: Mira HQ is a
+            // station hanging in the sky, and its one open room - the Launchpad - brings its own
+            // ground with it. `launchpad.js` builds the pad slab, its kerb and the lawn as floors
+            // of the area itself, because they are DRAWN on the map and were measured; a
+            // BuildPlanet plain underneath would be a second, invented ground competing with
+            // them for the same height.
         },
         new Entry
         {

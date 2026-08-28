@@ -34,7 +34,7 @@ The built-in updater then checks this repo's GitHub releases on the main menu on
 | Part | Job |
 |---|---|
 | `Core\` | The renderer. Contains **no** Unity. |
-| `Core\Areas\` | The hand-built world (Polus). Also contains no Unity. |
+| `Core\Areas\` | The hand-built worlds (Polus, Mira HQ, the Skeld). Also contains no Unity. |
 | `SceneGeometry.cs` | Builds the world model once per round from the live scene. |
 | `Core\NightSky.cs` | The night sky, **baked once** into a panorama and only looked up afterwards. |
 | `Core\HandLight.cs` | Everything that goes on top in screen coordinates: torch in hand, claws, predator vision, vignette. Shared by both renderers. |
@@ -158,10 +158,10 @@ judged in a dark corridor where it is forty pixels tall and half in shadow.
 
 ## How the map gets its look, on the maps without area data
 
-**Since the hand-built world this only applies to Skeld, Mira, Airship and Fungle.** On Polus it is
-exactly the other way round: nothing photographed, everything drawn; the section above describes
-that. Both paths sit side by side in the code, and the RenderTool switches back to this one with
-`--colliders`.
+**Since the hand-built world this only applies to Airship and Fungle.** On Polus, Mira HQ and the
+Skeld it is exactly the other way round: nothing photographed, everything drawn; the section below
+describes that. Both paths sit side by side in the code, and the RenderTool switches back to this
+one with `--colliders`.
 
 None of the look was drawn by hand. It all comes out of the copy of the game that is running right
 now:
@@ -211,26 +211,36 @@ and on every console with a collider stood a second one. The path is off
 (`Scene3D.GuessPropsFromArtwork`, `--guessprops` in the tool). An empty room is a smaller lie than a
 wrong one.
 
-## The hand-built world (Polus)
+## The hand-built world (Polus, Mira HQ, the Skeld)
 
-As of this version, Nightfall guesses nothing on Polus any more. The geometry comes from
-`Assets\NightfallWeb\src\areas\*.js`: seventeen areas, every number read off by hand against the
-printed grid over the map photo and verified in the first-person prototype. That is the most
-accurate description of Polus that exists in this project.
+Nightfall guesses nothing on these three maps any more. The geometry comes from
+`Assets\NightfallWeb\src\areas\`: fifty-five areas in all, every number read off by hand against
+the printed grid over the map photo and verified on foot in the first-person prototype. That is
+the most accurate description of these maps that exists in this project.
+
+Which map a key belongs to is decided in ONE place, `Core\Areas\MapAreaRegistry.cs` - a list of
+(key fragment, build function, optional exterior). Adding the next map is an entry there plus its
+two generated files, not a change in Scene3D, NightfallState and the render tool.
 
 | Part | Job |
 |---|---|
-| `..\Assets\NightfallWeb\export_areas.mjs` | runs the area modules and writes `Core\Areas\PolusAreas.g.cs` |
+| `..\Assets\NightfallWeb\export_areas.mjs` | runs the area modules and writes `<Map>Areas.g.cs`; the map is its first argument |
 | `Core\Areas\PolusAreas.g.cs` | **generated**: 17 areas, 172 floors, 126 walls (38 openings), 57 ceilings, 1132 pieces of furnishing |
+| `Core\Areas\MiraAreas.g.cs` | **generated**: 17 areas, 161 floors, 129 walls (18 openings), 109 ceilings, 615 pieces of furnishing |
+| `Core\Areas\SkeldAreas.g.cs` | **generated**: 21 areas |
+| `Core\Areas\MapAreaRegistry.cs` | which map keys have a built world, and how to build each |
 | `Core\Areas\AreaData.cs` | the area format as C# types |
-| `Core\Areas\AreaSurfaces.cs` | the material catalog (port of `surfaces.js`), 31 drawn surfaces |
+| `Core\Areas\AreaSurfaces.cs` | the material catalog (port of `surfaces.js`): 80 drawn surfaces for Polus and the Skeld |
+| `Core\Areas\AreaSurfacesMira.cs` | Mira HQ's 215, in a file of their own, folded into the same catalog |
 | `Core\Areas\AreaKit.cs` | the construction kit (port of `kit.js` + `build.js`) and the planet with its holes |
 
 The path of the data in one line:
 
 ```powershell
 cd Assets\NightfallWeb
-node export_areas.mjs          # src\areas\*.js  ->  Core\Areas\PolusAreas.g.cs
+node export_areas.mjs          # src\areas\*.js        ->  Core\Areas\PolusAreas.g.cs
+node export_areas.mjs mira     # src\areas\mira\*.js   ->  Core\Areas\MiraAreas.g.cs
+node export_areas.mjs skeld    # src\areas\skeld\*.js  ->  Core\Areas\SkeldAreas.g.cs
 ```
 
 The export *runs the modules* instead of reading their source text: several area files compute their

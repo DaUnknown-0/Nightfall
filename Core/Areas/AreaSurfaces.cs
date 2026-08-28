@@ -33,7 +33,7 @@ using System.Collections.Generic;
 
 namespace Nightfall.Core;
 
-public static class AreaSurfaces
+public static partial class AreaSurfaces
 {
     /// The DESIGN grid of a texture tile: every number in the catalogue below is measured in these
     /// units, and they were tuned against the map artwork. It stays at the prototype's 128.
@@ -169,6 +169,17 @@ public static class AreaSurfaces
             s ^= s << 13; s ^= s >> 17; s ^= s << 5;
             return (s & 0xFFFFFF) / (float)0x1000000;
         }
+    }
+
+    /// Folds the per-map halves of the catalogue into the one dictionary every lookup uses.
+    ///
+    /// Mira HQ contributes 215 materials - more than Polus and the Skeld together - and they live
+    /// in AreaSurfacesMira.cs so that neither file has to be scrolled past to reach the other. A
+    /// static constructor rather than a partial dictionary literal because a dictionary can only
+    /// be initialised in one place; both halves stay plain `["name"] = ...` lists this way.
+    static AreaSurfaces()
+    {
+        foreach (var kv in MiraCatalogue) Catalogue[kv.Key] = kv.Value;
     }
 
     // ================================================================================
