@@ -57,6 +57,17 @@ public sealed class Canvas2D
         Px = new float[PW * PH * 4];
     }
 
+    /// Puts the canvas back into the state the constructor leaves it in - every channel zero - so
+    /// that ONE canvas can draw one texture after another.
+    ///
+    /// That matters more than it sounds. This buffer is four floats per device pixel: a megabyte at
+    /// 256 square. Drawing a map's catalogue with a fresh canvas each time therefore threw a
+    /// megabyte at the allocator per material, which nobody noticed while a map had thirty of them
+    /// and was 217 megabytes of churn the first time a map had two hundred (Mira HQ; measured 304 MB
+    /// allocated in total to build its catalogue). Among Us is a 32-bit process, so that is not just
+    /// garbage-collector work, it is address space - and it ran out.
+    public void Reset() => Array.Clear(Px, 0, Px.Length);
+
     public void Clear(NfColor c, float alpha = 1f)
     {
         for (int i = 0; i < Px.Length; i += 4)

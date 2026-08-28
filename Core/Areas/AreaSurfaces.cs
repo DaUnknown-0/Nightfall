@@ -39,15 +39,37 @@ public static partial class AreaSurfaces
     /// units, and they were tuned against the map artwork. It stays at the prototype's 128.
     public const int PX = 128;
 
-    /// How many real pixels one design unit becomes.
+    /// The FINEST resolution a material is drawn at: how many real pixels one design unit
+    /// becomes. See `DetailFor` for which materials actually get it.
     ///
     /// It used to be one, and one is what the first playtest found too soft: a wall you stand at
     /// fills most of the screen, so a 128-pixel tile is magnified four to six times and every seam
     /// is a gradient. Two is the whole difference between a drawn panel and a blurred one, and it
     /// costs almost nothing at render time because the mip pyramid means a distant wall still reads
-    /// a level whose texels are pixel sized. What it does cost is memory: 31 surfaces at 256 square
-    /// with their pyramids come to about ten megabytes, against two and a half before.
+    /// a level whose texels are pixel sized. What it does cost is memory: one surface at 256 square
+    /// with its pyramid is 349 KB, against 87 KB at 128.
     public const int Detail = 2;
+
+    /// Below this `Unit`, a material is drawn at half resolution.
+    ///
+    /// A TEXTURE'S SHARPNESS IS TEXELS PER WORLD UNIT, NOT TEXELS. `Unit` says how much world one
+    /// tile covers, so the same 256-pixel tile is 177 texels per unit on a 1.45-unit wall panel and
+    /// 1280 texels per unit on a 0.2-unit gem. The wall is what the playtest was complaining about;
+    /// the gem was never anywhere near soft, and paying wall prices for it is simply waste.
+    ///
+    /// So the rule is one density for everything: match what Detail 2 gives the wall, 256/1.45 =
+    /// 177 texels per unit. At 128 pixels a tile reaches that density up to Unit = 128/177 = 0.72,
+    /// which is where the line sits. Nothing gets SOFTER than the softest thing today; the small
+    /// stuff just stops being four times sharper than it needs to be.
+    ///
+    /// Measured on Mira HQ's 215 materials: 71,7 MB of retained pixels before, 46,4 MB after. The
+    /// offline renderer's 67 viewpoints come out with a mean absolute error of 0,00 to 0,02 of 255
+    /// and a largest single-pixel difference of 3 - which is to say the change is invisible - and
+    /// the measured frame cost is the same to within run-to-run noise.
+    public const float HalfDetailBelowUnit = 0.72f;
+
+    /// The device resolution for a material of this `Unit`.
+    public static int DetailFor(float unit) => unit < HalfDetailBelowUnit ? 1 : Detail;
 
     private sealed class Spec
     {
@@ -59,7 +81,41 @@ public static partial class AreaSurfaces
     private static readonly Dictionary<string, Surface3D> cache = new();
     private static readonly Dictionary<string, Surface3D> plainCache = new();
 
-    public static void ClearCache() { cache.Clear(); plainCache.Clear(); }
+    /// ONE drawing buffer per resolution, reused for every material.
+    ///
+    /// The canvas is a scratch pad: `ToRgba` copies the finished pixels out, and nothing keeps a
+    /// reference to it afterwards. Handing every material its own was therefore pure churn - see
+    /// the note on `Canvas2D.Reset`. Two entries at most, 1,25 MB together, held for the round.
+    private static readonly Dictionary<int, Canvas2D> scratch = new();
+
+    private static Canvas2D Scratch(int detail)
+    {
+        if (scratch.TryGetValue(detail, out var cv)) { cv.Reset(); return cv; }
+        cv = new Canvas2D(PX, PX, detail);
+        scratch[detail] = cv;
+        return cv;
+    }
+
+    /// What the catalogue built so far is holding, in bytes. Reported at the end of a world build:
+    /// the map that ran a 32-bit Among Us out of address space did it here, and a number in the log
+    /// is the difference between seeing that and inferring it afterwards.
+    private static long retainedBytes;
+
+    public static long RetainedBytes_ => retainedBytes;
+    public static int Count => cache.Count;
+
+    /// Base image plus its mip pyramid, which converges to 4/3 of the base.
+    private static long RetainedBytes(int w, int h) => (long)(w * h * 4L * 4 / 3);
+
+    public static void ClearCache()
+    {
+        cache.Clear();
+        plainCache.Clear();
+        // The scratch buffers go too. They are small, but Reset is a round-end teardown and a
+        // megabyte held across a lobby the player has left is a megabyte held for nothing.
+        scratch.Clear();
+        retainedBytes = 0;
+    }
 
     /// How many world units one tile of this material covers.
     public static float UnitOf(string name) =>
@@ -84,11 +140,12 @@ public static partial class AreaSurfaces
             cache[name] = s;
             return s;
         }
-        var cv = new Canvas2D(PX, PX, Detail);
+        var cv = Scratch(DetailFor(spec.Unit));
         spec.Draw(cv);
         cv.SetTintMask(0, 0, PX, PX, 0f);
         s = new Surface3D(cv.ToRgba(), cv.PW, cv.PH);
         cache[name] = s;
+        retainedBytes += RetainedBytes(cv.PW, cv.PH);
         return s;
     }
 

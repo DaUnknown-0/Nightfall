@@ -127,7 +127,14 @@ public sealed class Scene3D
         s.areas = b;
         s.MatchDoors(map, b);
         s.BuildIndex(map);
-        NightfallLog($"built world from area data: {s.All.Count} triangles");
+        // The material catalogue said out loud, because it is the biggest allocation the mod
+        // makes and it varies by a factor of six between maps: Polus draws 32 materials
+        // (7,2 MB), Mira HQ 215 (46,4 MB). Among Us is a 32-bit process, and the first build
+        // that ever ran on Mira exhausted its address space - a number here turns the next
+        // such case from guesswork into a reading.
+        NightfallLog($"built world from area data: {s.All.Count} triangles, "
+                     + $"{AreaSurfaces.Count} materials holding "
+                     + $"{AreaSurfaces.RetainedBytes_ / 1048576.0:0.0} MB");
         return s;
     }
 
