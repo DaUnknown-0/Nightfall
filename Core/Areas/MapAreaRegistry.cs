@@ -57,6 +57,31 @@ public static class MapAreaRegistry
         },
         new Entry
         {
+            KeyFragment = "airship",
+            Build = AirshipAreas.Build,
+            // The Airship brings its DECK with it - `hull.js` is the 22nd and LAST area, lays the
+            // underbody 0.02 below every room and carries the flank and keel as `ribbon` fixtures,
+            // which is also why it has to stay last (restage is last-wins, and anywhere the
+            // underbody meets a room the room has to win). What it cannot bring is the part of the
+            // ship the map never draws: the gas envelope over the deck, its fins, the nacelles and
+            // the cloud sea underneath. That is AirshipExterior, and it is a BuildExterior rather
+            // than a 23rd area precisely because it is not measured - see the file's head.
+            BuildExterior = AirshipExterior.Build,
+        },
+        new Entry
+        {
+            KeyFragment = "fungle",
+            Build = FungleAreas.Build,
+            // Deliberately no BuildExterior YET, and this is the one entry where that is a
+            // shortcut rather than a decision. The Fungle is an island: unlike the Skeld it has
+            // real outdoor ground between its rooms, and unlike Polus that ground is not a flat
+            // plain that BuildPlanet could lay down - it rises through four measured levels
+            // (Jungle 0, Highland 4.5884, Ledge 6.4746, Kuppe 8.1244). Until that terrain is
+            // described, the areas carry their own ground and everything between them is honestly
+            // empty. See section 7 of _work/KONZEPT_AIRSHIP_FUNGLE.md.
+        },
+        new Entry
+        {
             KeyFragment = "skeld",
             Build = SkeldAreas.Build,
             // No BuildExterior: Skeld is a sealed ship in open space, not a station standing on

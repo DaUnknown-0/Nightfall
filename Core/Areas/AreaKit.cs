@@ -93,6 +93,37 @@ public sealed class AreaBuilder
         return inPit ? pit : best;
     }
 
+    /// Whether any deck at all lies under the point. GroundAt falls back to the planet where there
+    /// is none, and on a map whose ground is not the planet (the Fungle's highlands sit metres
+    /// above it) that fallback is a hole in the description, not a place: the view's hole guard
+    /// uses this to tell the two apart.
+    public bool DeckUnder(float x, float y)
+    {
+        foreach (var d in decks)
+            if (x >= d.rect.MinX && x <= d.rect.MaxX && y >= d.rect.MinY && y <= d.rect.MaxY) return true;
+        return false;
+    }
+
+    /// Removes `hole` from every rectangle in `pieces`, replacing each affected one by the up to
+    /// four rectangles that remain around it. Rectangles that miss the hole pass through untouched.
+    private static void SubtractRect(List<AuRect> pieces, AuRect hole)
+    {
+        for (int i = pieces.Count - 1; i >= 0; i--)
+        {
+            var r = pieces[i];
+            if (hole.MinX >= r.MaxX || hole.MaxX <= r.MinX || hole.MinY >= r.MaxY || hole.MaxY <= r.MinY) continue;
+            pieces.RemoveAt(i);
+            const float eps = 1e-4f;
+            // the band below and above the hole, full width
+            if (hole.MinY - r.MinY > eps) pieces.Add(new AuRect(r.MinX, r.MinY, r.MaxX, hole.MinY));
+            if (r.MaxY - hole.MaxY > eps) pieces.Add(new AuRect(r.MinX, hole.MaxY, r.MaxX, r.MaxY));
+            // the strips left and right of the hole, within its y-span
+            float y0 = MathF.Max(r.MinY, hole.MinY), y1 = MathF.Min(r.MaxY, hole.MaxY);
+            if (hole.MinX - r.MinX > eps) pieces.Add(new AuRect(r.MinX, y0, hole.MinX, y1));
+            if (r.MaxX - hole.MaxX > eps) pieces.Add(new AuRect(hole.MaxX, y0, r.MaxX, y1));
+        }
+    }
+
     /// LAYS A SILL OF FLOOR UNDER EVERY DOORWAY THAT LACKS ONE - after all areas are built,
     /// because "lacks one" is a question about the neighbours' decks and those may belong to an
     /// area that has not been built yet while the wall is going up.
@@ -289,6 +320,41 @@ public sealed class AreaBuilder
         }
     }
 
+    /// THE ENVELOPE of an airship: an ellipsoid with an airship's profile - a blunt bow and a
+    /// long tapering stern, instead of the symmetrical cigar a plain ellipsoid gives. `rx`/`rz`
+    /// are world units, `ry` area units (the same split Blob uses); `centreH` is the centre in
+    /// area units. `bow` is the -x end. The profile is the prototype's, world.js airshipBody:
+    /// p(x) = (1+x)^0.34 * (1-x)^0.80, normalised, applied to the circular cross-section.
+    public void Envelope(float cx, float cy, float centreH, float rx, float ry, float rz,
+                         string mat, int seg = 18, int rings = 12)
+    {
+        var tex = AreaSurfaces.Get(mat);
+        float emis = AreaSurfaces.EmissiveOf(mat);
+        float cH = centreH * V;
+        float pmax = 0f;
+        for (float x = -0.999f; x < 1f; x += 0.002f) pmax = MathF.Max(pmax, Prof(x));
+        static float Prof(float x) => MathF.Pow(1f + x, 0.34f) * MathF.Pow(1f - x, 0.80f);
+
+        NfVec3 P(int i, int j)
+        {
+            float th = i * 2f * NfMath.Pi / seg;
+            float ph = j * NfMath.Pi / rings;
+            float ax = MathF.Cos(ph);                        // -1 (stern) .. 1 (bow), along x
+            float s0 = MathF.Max(1e-3f, MathF.Sin(ph));
+            float f = Prof(Math.Clamp(-ax, -0.9999f, 0.9999f)) / pmax / s0;
+            return new NfVec3(cx + ax * rx, cH + MathF.Cos(th) * s0 * f * ry,
+                              cy + MathF.Sin(th) * s0 * f * rz);
+        }
+
+        for (int j = 0; j < rings; j++)
+            for (int i = 0; i < seg; i++)
+            {
+                var a = P(i, j); var b = P(i + 1, j);
+                var c = P(i + 1, j + 1); var d = P(i, j + 1);
+                Quad(a, b, c, d, tex, 1f, 1f, ShadeSide, emis);
+            }
+    }
+
     /// A single horizontal slab of one material - the planet, a shore, a decal.
     public void Slab(AuRect r, float height, string mat, float shade = 1f)
     {
@@ -319,10 +385,40 @@ public sealed class AreaBuilder
             }
             else
             {
-                // The rim is the visible EDGE of the deck: at a doorway one sees that the station
-                // is built out of slabs sitting a hand's breadth above the planet.
-                Box(f.Rect, d - t, d, new Faces { All = f.Rim ?? "panelSteel", Top = mat },
-                    omitBottom: !f.Pit);
+                /*
+                 * A SLAB NEVER ROOFS A PIT.
+                 *
+                 * The Airship's hull lays its underbody at -0.02 under EVERY room, as one closed
+                 * surface (hull.js: "der Unterbau laeuft UNTER den Raeumen durch"). Under a room at
+                 * deck 0 that is exactly right - the room's floor wins by height and the hull is the
+                 * unseen underside. Over the Gap Room's pit it was the opposite: the pit floor sits
+                 * at -1.795, the hull slab at -0.02 lay ABOVE it, and from the deck the pit read as a
+                 * red floor level with the tiles, with the drums poking through it; from the pit's
+                 * own ledge (a real place, reached by ladder_gap) the same slab was a red ceiling a
+                 * hand's breadth over one's head. Both were reported, as "a floor that does not
+                 * belong there" and as "glitching under the map".
+                 *
+                 * So a non-pit floor that lies BELOW deck 0 - a slab, never a room floor - is cut
+                 * around every pit already registered beneath it. Room floors at deck 0 or above
+                 * are left alone on purpose: Polus's lava bridges are floors over a pit and meant
+                 * to be. Only the hull area comes last enough, and low enough, to hit this.
+                 */
+                var pieces = new List<AuRect> { f.Rect };
+                if (!f.Pit && d < 0f)
+                    foreach (var pd in decks)
+                        if (pd.pit && pd.y < d) SubtractRect(pieces, pd.rect);
+
+                foreach (var piece in pieces)
+                {
+                    // The rim is the visible EDGE of the deck: at a doorway one sees that the
+                    // station is built out of slabs sitting a hand's breadth above the planet.
+                    Box(piece, d - t, d, new Faces { All = f.Rim ?? "panelSteel", Top = mat },
+                        omitBottom: !f.Pit);
+                    if (pieces.Count != 1) decks.Add((piece, d, f.Pit));
+                }
+                // Cut into pieces (or cut away entirely): the decks were registered per piece
+                // above, and a slab that lies wholly inside a pit registers nothing at all.
+                if (pieces.Count != 1) continue;
             }
             decks.Add((f.Rect, d, f.Pit));
         }
@@ -546,12 +642,40 @@ public sealed class AreaBuilder
                  shade, AreaSurfaces.EmissiveOf(mat));
         }
 
-        // 1. IN - the room side, along the inner edge p0 -> p1.
-        Face(new NfVec3(x1, hh0, y1), new NfVec3(x0, hh0, y0), new NfVec3(x0, hh1, y0), new NfVec3(x1, hh1, y1),
-             f.Pick('i'), len, h, ShadeFace);
-        // 2. OUT - the hull side, along the outer edge.
-        Face(new NfVec3(qx1, hh0, qy1), new NfVec3(qx0, hh0, qy0), new NfVec3(qx0, hh1, qy0), new NfVec3(qx1, hh1, qy1),
-             f.Pick('o'), len, h, ShadeSide);
+        /*
+         * A WINDOW BAND (spec.Window, kit.js diagWall): parapet - glass - lintel, instead of one
+         * closed face. The Airship's bow is a chain of seven chords with sky-blue glass over the
+         * console bank; built closed, the cockpit was a room with no view, and built open (the
+         * first attempt) it was a room with no walls.
+         */
+        if (spec.Window is var win && win.HasValue)
+        {
+            float sill = MathF.Max(0f, win.Value.Sill), head = MathF.Min(h, win.Value.Head);
+            void Band(float a, float b, string inMat, string outMat, float emis)
+            {
+                if (b - a <= 1e-4f) return;
+                float ba = (y0base + a) * V, bb = (y0base + b) * V;
+                Face(new NfVec3(x1, ba, y1), new NfVec3(x0, ba, y0), new NfVec3(x0, bb, y0), new NfVec3(x1, bb, y1),
+                     inMat, len, b - a, ShadeFace);
+                Face(new NfVec3(qx1, ba, qy1), new NfVec3(qx0, ba, qy0), new NfVec3(qx0, bb, qy0), new NfVec3(qx1, bb, qy1),
+                     outMat, len, b - a, ShadeSide);
+                _ = emis;
+            }
+            Band(0f, sill, f.Pick('i'), f.Pick('o'), 0f);                      // parapet
+            Band(head, h, f.Pick('i'), f.Pick('o'), 0f);                       // lintel
+            // The pane itself, both faces in the glass colour (the rasteriser has no blending, so
+            // glass is a dark blue plate - the same call a straight wall's window makes).
+            Band(sill, head, Glass(spec.Glass), Glass(spec.Glass), 0f);
+        }
+        else
+        {
+            // 1. IN - the room side, along the inner edge p0 -> p1.
+            Face(new NfVec3(x1, hh0, y1), new NfVec3(x0, hh0, y0), new NfVec3(x0, hh1, y0), new NfVec3(x1, hh1, y1),
+                 f.Pick('i'), len, h, ShadeFace);
+            // 2. OUT - the hull side, along the outer edge.
+            Face(new NfVec3(qx1, hh0, qy1), new NfVec3(qx0, hh0, qy0), new NfVec3(qx0, hh1, qy0), new NfVec3(qx1, hh1, qy1),
+                 f.Pick('o'), len, h, ShadeSide);
+        }
         // 3+4. The two end caps, one at each mouth of the wall, in the same "cut end is structure"
         // material as a straight wall's own ends.
         Face(new NfVec3(x0, hh0, y0), new NfVec3(qx1, hh0, qy1), new NfVec3(qx1, hh1, qy1), new NfVec3(x0, hh1, y0),
@@ -694,7 +818,11 @@ public sealed class AreaBuilder
                 Box(new AuRect(r.MinX + 0.04f, r.MinY + 0.04f, r.MaxX - 0.04f, r.MaxY - 0.04f), Y0, Y0 + h - 0.12f, s.Mat ?? "darkTrim");
                 Box(r, Y0 + h - 0.12f, Y0 + h, s.Mat ?? "darkTrim");
                 const float i = 0.07f;
-                Glowing(new AuRect(r.MinX + i, r.MinY + i, r.MaxX - i, r.MaxY - i), Y0 + h, Y0 + h + 0.02f, s.Screen ?? "#4fc3e8", 't');
+                // Capped at 0.55 x 0.45 like kit.js: on a 1 x 0.85 pedestal the full-size screen
+                // read as a slab of light, not a screen (review 2026-08-30, cockpit code desk).
+                float sw = MathF.Min(r.Width - i * 2f, 0.55f), sd = MathF.Min(r.Depth - i * 2f, 0.45f);
+                Glowing(new AuRect(r.Cx - sw * 0.5f, r.Cy - sd * 0.5f, r.Cx + sw * 0.5f, r.Cy + sd * 0.5f),
+                        Y0 + h, Y0 + h + 0.02f, s.Screen ?? "#4fc3e8", 't');
                 break;
             }
 
@@ -899,9 +1027,17 @@ public sealed class AreaBuilder
             {
                 var (x, y) = s.At.Value;
                 float w = s.W ?? 0.5f, d = s.D ?? 0.22f, h = (s.Y0 ?? 2.0f) + deck;
-                Box(new AuRect(x - w * 0.5f, y - d * 0.5f, x + w * 0.5f, y + d * 0.5f), h - 0.06f, h, "darkTrim", false);
-                Glowing(new AuRect(x - w * 0.5f + 0.04f, y - d * 0.5f + 0.03f, x + w * 0.5f - 0.04f, y + d * 0.5f - 0.03f),
-                        h - 0.09f, h - 0.06f, s.Col ?? "#fff3d8", 'b');
+                // `post: true` (kit.js): the lamp stands on a pole from the deck up to its housing.
+                // Outdoors on the Fungle there is no ceiling to hang it from.
+                if (s.Post) Cyl(x, y, s.PostR ?? 0.045f, deck, h - 0.06f, s.PostMat ?? "darkTrim", 8);
+                // `housing: false`: only the light. A campfire lights itself, and the housing sat
+                // over it as a floating lid (review 2026-08-30).
+                if (!s.NoHousing)
+                {
+                    Box(new AuRect(x - w * 0.5f, y - d * 0.5f, x + w * 0.5f, y + d * 0.5f), h - 0.06f, h, "darkTrim", false);
+                    Glowing(new AuRect(x - w * 0.5f + 0.04f, y - d * 0.5f + 0.03f, x + w * 0.5f - 0.04f, y + d * 0.5f - 0.03f),
+                            h - 0.09f, h - 0.06f, s.Col ?? "#fff3d8", 'b');
+                }
                 break;
             }
 
@@ -1027,6 +1163,50 @@ public sealed class AreaBuilder
             }
 
             // A railing: posts and a top rail, see-through, which a wall is not.
+            /*
+             * A RIBBON: rows of polylines at different heights, joined into one skin - the port of
+             * kit.js' ribbon(). The Airship needs two of them: the hull FLANK (the bright band the
+             * map folds down south of the rooms is the ship's side, not a floor) and, since the
+             * exterior pass, the KEEL - the bulging board between deck edge and belly. Built as
+             * quads between neighbouring rows; the winding is chosen per quad so the normal points
+             * away from the ship's centre, because this renderer lights by normal and a skin turned
+             * inside out goes black.
+             */
+            case "ribbon":
+            {
+                var rows = s.Rows; var hs = s.Heights;
+                if (rows == null || hs == null || rows.Length < 2 || hs.Length != rows.Length) break;
+                string mat = s.Mat ?? "panelSteel";
+                var tex = AreaSurfaces.Get(mat);
+                float emis = AreaSurfaces.EmissiveOf(mat);
+                float unit = s.Unit ?? 2f;
+                int n = rows[0].Length / 2;
+                // The ship's centre in plan, so "outward" has a meaning for the winding test.
+                float ccx = 0f, ccy = 0f, cn = 0f;
+                for (int r = 0; r < rows.Length; r++)
+                    for (int i = 0; i < n; i++) { ccx += rows[r][i * 2]; ccy += rows[r][i * 2 + 1]; cn++; }
+                ccx /= MathF.Max(1f, cn); ccy /= MathF.Max(1f, cn);
+
+                for (int r = 0; r < rows.Length - 1; r++)
+                {
+                    if (rows[r].Length != rows[r + 1].Length) break;
+                    float ha = hs[r] * V, hb = hs[r + 1] * V;
+                    for (int i = 0; i < n - 1; i++)
+                    {
+                        var a = new NfVec3(rows[r][i * 2], ha, rows[r][i * 2 + 1]);
+                        var b = new NfVec3(rows[r][(i + 1) * 2], ha, rows[r][(i + 1) * 2 + 1]);
+                        var c = new NfVec3(rows[r + 1][(i + 1) * 2], hb, rows[r + 1][(i + 1) * 2 + 1]);
+                        var d = new NfVec3(rows[r + 1][i * 2], hb, rows[r + 1][i * 2 + 1]);
+                        float seg = MathF.Sqrt((b.X - a.X) * (b.X - a.X) + (b.Z - a.Z) * (b.Z - a.Z));
+                        var nrm = NfVec3.Cross(b - a, d - a);
+                        float mx = (a.X + c.X) * 0.5f - ccx, mz = (a.Z + c.Z) * 0.5f - ccy;
+                        if (nrm.X * mx + nrm.Z * mz < 0f) Quad(a, d, c, b, tex, MathF.Max(1f, seg / unit), 1f, ShadeSide, emis);
+                        else Quad(a, b, c, d, tex, MathF.Max(1f, seg / unit), 1f, ShadeSide, emis);
+                    }
+                }
+                break;
+            }
+
             case "rail":
             {
                 var r = s.Rect.Value;
@@ -1043,6 +1223,39 @@ public sealed class AreaBuilder
                     float px = horiz ? r.MinX + r.Width * f : r.Cx;
                     float py = horiz ? r.Cy : r.MinY + r.Depth * f;
                     Box(new AuRect(px - t * 0.5f, py - t * 0.5f, px + t * 0.5f, py + t * 0.5f), Y0, Y0 + h - t, m);
+                }
+                break;
+            }
+
+            /// A LADDER: two rails and rungs, standing upright. The twin of kit.js' `ladder`,
+            /// and it has to stay a twin - the offline render tool and the browser are compared
+            /// against each other, so a difference here shows up as the picture disagreeing with
+            /// itself rather than as an error.
+            ///
+            /// Among Us draws a ladder as a path NORTHWARD: foot and head marker share an x and
+            /// differ in y, so its drawn length is a HEIGHT here, not a distance. The walkable
+            /// ground under it is a steep flight of steps over the same band, because GroundAt has
+            /// to stay single-valued; this fixture is the ladder that band actually is. Nobody
+            /// sees the two disagree - every one of the seven bands is walled off at both ends.
+            ///
+            /// The 0.1154 rung spacing is measured off the game's own ladder sprites (6 px at
+            /// ~52 px per unit, identical on Airship and Fungle), not chosen. Defaults are
+            /// duplicated from kit.js rather than exported, so a plain `rect`/`y0`/`h`/`mat`
+            /// fixture round-trips through the exporter untouched.
+            case "ladder":
+            {
+                var r = s.Rect.Value;
+                float h = s.H ?? 1f;
+                const float rail = 0.06f, step = 0.1154f, t = 0.032f;
+                string m = s.Mat ?? "darkTrim";
+                float x0 = r.MinX, x1 = r.MaxX;
+                Box(new AuRect(x0, r.MinY, MathF.Min(x0 + rail, x1), r.MaxY), Y0, Y0 + h, m);
+                Box(new AuRect(MathF.Max(x1 - rail, x0), r.MinY, x1, r.MaxY), Y0, Y0 + h, m);
+                float ix0 = MathF.Min(x0 + rail, x1), ix1 = MathF.Max(x1 - rail, x0);
+                if (ix1 > ix0)
+                {
+                    for (float yy = Y0 + step; yy + t <= Y0 + h + 1e-4f; yy += step)
+                        Box(new AuRect(ix0, r.MinY, ix1, r.MaxY), yy, yy + t, m);
                 }
                 break;
             }

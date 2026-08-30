@@ -76,6 +76,34 @@ public static partial class AreaSurfaces
         public float Unit = 1f;
         public float Emissive;
         public Action<Canvas2D> Draw;
+
+        /// OVERRIDES the resolution `DetailFor(Unit)` would pick. Null means "follow the rule".
+        ///
+        /// It exists because the rule is coarse where it matters most. `HalfDetailBelowUnit`
+        /// gives everything at or above Unit 0.72 the full 256, but the density it is trying to
+        /// hold is 177 texels per world unit: a material at Unit 0.8 gets 320 that way, nearly
+        /// twice what the reference wall gets, and pays four times the memory for it.
+        ///
+        /// On Polus, Mira and the Skeld that waste is affordable and those maps are SIGNED OFF,
+        /// so the rule stays exactly as it was for them. The Airship and the Fungle are a
+        /// different case: 154 and 140 of their materials sit in that band, and the two catalogues
+        /// came to 58.7 and 65.2 MB - both above Mira's 46.4 MB, which is the largest value this
+        /// 32-bit client has ever carried. It did not carry these: the first Airship round logged
+        /// `Model built in 1562 ms` and then an OutOfMemoryException out of a harmless
+        /// SortingLayer call, and the process died a few minutes later.
+        ///
+        /// CORRECTION (2026-08-29): that exception was never the address space running out. The
+        /// SortingLayer.layers call threw on every world build ever logged here, on every map,
+        /// including one at 874 MB private bytes with 4 GB addressable - the interop path mis-sizes
+        /// the struct array. The call is gone (NightfallView). The resolution rule below still
+        /// stands on its own merits: a Mira build costs the process +38 MB measured, and smaller
+        /// catalogues are cheaper to build and to hold whatever the crash was.
+        ///
+        /// So the two new catalogues set this explicitly for their mid-band materials. 128 pixels
+        /// at Unit 1.0 is 128 texels per unit against the reference 177 - a seventh softer on a
+        /// surface nobody presses their face against, and the difference between a map that runs
+        /// and a map that kills the client.
+        public int? Detail;
     }
 
     private static readonly Dictionary<string, Surface3D> cache = new();
@@ -140,7 +168,7 @@ public static partial class AreaSurfaces
             cache[name] = s;
             return s;
         }
-        var cv = Scratch(DetailFor(spec.Unit));
+        var cv = Scratch(spec.Detail ?? DetailFor(spec.Unit));
         spec.Draw(cv);
         cv.SetTintMask(0, 0, PX, PX, 0f);
         s = new Surface3D(cv.ToRgba(), cv.PW, cv.PH);
@@ -237,6 +265,8 @@ public static partial class AreaSurfaces
     static AreaSurfaces()
     {
         foreach (var kv in MiraCatalogue) Catalogue[kv.Key] = kv.Value;
+        foreach (var kv in AirshipCatalogue) Catalogue[kv.Key] = kv.Value;
+        foreach (var kv in FungleCatalogue) Catalogue[kv.Key] = kv.Value;
     }
 
     // ================================================================================

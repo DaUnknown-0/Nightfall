@@ -1,4 +1,4 @@
-// Nightfall - Copyright (C) 2026 DaUnknown-0
+﻿// Nightfall - Copyright (C) 2026 DaUnknown-0
 // Licensed under GPL-3.0-or-later. See LICENSE for details.
 
 /*
@@ -127,14 +127,26 @@ public static class NightfallView
                 var map = SceneGeometry.Current;
                 if (map == null) return;
                 var t0 = DateTime.Now;
-                scene = Scene3D.Build(map);
+                // MEMORY (2026-08-29): the process, not the catalogue. AreaSurfaces reports what it
+                // retains, but the crash that started all this was the 32-bit address space running
+                // out, and only the process total says how close that is. Private bytes before and
+                // after, so the log reads "world build: +58 MB, 1244 MB now" next to the triangle
+                // count - the number CrashDiagnostics' 30-second heartbeat cannot isolate.
+                float mbBefore = PrivateMb();
+                // The rides first: the platform's two ends go INTO the build (its disc is built at
+                // every slot along the ride), the ladders and the zipline are kept for the ground.
+                var platform = NightfallRides.Discover();
+                scene = Scene3D.Build(map, platform);
+                float mbAfter = PrivateMb();
                 NightfallPlugin.Logger?.LogInfo(
                     $"[Nightfall] Model built in {(DateTime.Now - t0).TotalMilliseconds:F0} ms: "
-                    + $"{scene.TriangleCount} triangles.");
+                    + $"{scene.TriangleCount} triangles; process +{mbAfter - mbBefore:0} MB "
+                    + $"({mbAfter:0} MB private now).");
             }
 
             EnsureScreen();
             eyeSmooth = float.NaN;      // fresh view, no stale height to glide away from
+            lastGround = float.NaN;
             IsActive = true;
             NightfallPlugin.Logger?.LogInfo("[Nightfall] First-person view ON.");
         }
@@ -291,10 +303,26 @@ public static class NightfallView
         AvatarCapture.Clear();
         WorldRelay.Clear();
         scene = null;
+        NightfallRides.Clear();
+        lastGround = float.NaN;
         AuSurfaces.ClearCache();
         // The built world's material catalogue as well: thirty-odd 128x128 textures is not much,
         // but a lobby that is left and rejoined a dozen times keeps every one of them otherwise.
         AreaSurfaces.ClearCache();
+        // Same yardstick as the build line: what the process is at after letting go. The managed
+        // part only returns on the next collection, so this reads slightly high until then; the
+        // heartbeat thirty seconds later shows the settled value.
+        NightfallPlugin.Logger?.LogInfo($"[Nightfall] World released; {PrivateMb():0} MB private now.");
+    }
+
+    private static float PrivateMb()
+    {
+        try
+        {
+            using var p = System.Diagnostics.Process.GetCurrentProcess();
+            return p.PrivateMemorySize64 / 1048576f;
+        }
+        catch { return 0f; }
     }
 
     private static void EnsureScreen()
@@ -330,27 +358,28 @@ public static class NightfallView
             // mask (see HideWorld); this stays as a second line of defence for anything that ends
             // up on layer 1 with us, and it says out loud when it cannot do its job.
             screen.sortingOrder = 30000;
-            try
-            {
-                var layers = SortingLayer.layers;
-                if (layers != null && layers.Length > 0)
-                {
-                    var top = layers[0];
-                    for (int i = 1; i < layers.Length; i++)
-                        if (layers[i].value > top.value) top = layers[i];
-                    screen.sortingLayerID = top.id;
-                    NightfallPlugin.Logger?.LogInfo(
-                        $"[Nightfall] Screen on sorting layer '{top.name}' (value {top.value}).");
-                }
-                else NightfallPlugin.Logger?.LogWarning(
-                    "[Nightfall] SortingLayer.layers is empty - screen stays on the default layer.");
-            }
-            catch (Exception e)
-            {
-                NightfallPlugin.Logger?.LogWarning(
-                    $"[Nightfall] SortingLayer.layers unavailable ({e.Message}) - the culling mask "
-                    + "is what keeps the vanilla world off the screen.");
-            }
+            //
+            // THE SortingLayer.layers LOOKUP IS GONE (2026-08-29), AND HERE IS WHY IT HAD TO GO.
+            //
+            // It used to sit here in a try/catch as a "second line of defence". The log across
+            // every Nightfall session on this machine shows what it actually did: it threw on EVERY
+            // world build, on every map, nine times out of nine - eight times an
+            // OutOfMemoryException, once "Arithmetic operation resulted in an overflow". The last
+            // of those came at 874 MB private bytes in a process that can address 4 GB, so it was
+            // never memory running out: SortingLayer is a struct with a string in it, and the
+            // Il2Cpp interop path that turns the native SortingLayer[] into a managed array gets
+            // its length wrong, overflows, and asks for an impossible allocation. The message
+            // "OutOfMemory" was a symptom of a corrupt length, not of a full heap - and the note in
+            // AreaSurfaces.cs that read it as the catalogue exhausting the address space was
+            // reading it backwards.
+            //
+            // A call that fails deterministically inside the interop layer, on the exact frame the
+            // first-person view comes up, is not a defence, it is a suspect: the 2026-08-28 crash
+            // dump (coreclr, main thread, minutes after "First-person view ON" on Mira) sits right
+            // behind one of those throws. Whether the failed marshal leaves something torn behind
+            // cannot be proven from here, but the call has no job left to do - the culling mask
+            // above (HideWorld) is what keeps the vanilla world off the screen, and has been since
+            // the second playtest - so it is simply not made any more.
         }
 
         holder.transform.SetParent(cam.transform, false);
@@ -443,6 +472,7 @@ public static class NightfallView
 
             if (scene == null) return;
 
+            NightfallRides.SyncPlatform(scene);
             CollectBillboards();
             // THE STATION STANDS ON THE PLANET, and in the built world that is a real difference:
             // the decks sit a hand's breadth above the ground and the lava gorge is below it. So
@@ -456,7 +486,7 @@ public static class NightfallView
             // picture jolting rather than as a step. A short lag makes it a stride.
             // The smoothing memory is eyeSmooth, NOT View.EyeHeight: View was just rebuilt from
             // Default by BuildView, so its EyeHeight is the constant 0.62 again every frame.
-            float want = EyeAboveFloor + scene.GroundAt(View.Position);
+            float want = EyeAboveFloor + GroundUnderPlayer();
             float dt = Mathf.Clamp(Time.deltaTime, 0f, 0.1f);
             eyeSmooth = float.IsNaN(eyeSmooth) || Mathf.Abs(want - eyeSmooth) > 0.9f
                 ? want                                            // a teleport, not a step
@@ -470,6 +500,41 @@ public static class NightfallView
             NightfallPlugin.Logger?.LogError($"[Nightfall] Tick failed: {e}");
             Deactivate();
         }
+    }
+
+    /*
+     * THE GROUND UNDER THE PLAYER, with two things the plain deck lookup gets wrong.
+     *
+     * 1. RIDES. On the Gap Room platform, on a ladder, on the zipline, the player's position is
+     *    over something that is not what their feet are on. NightfallRides knows the three from
+     *    the game's own objects and answers with the ride's ground instead (see that file).
+     *
+     * 2. HOLES. Where the description has no deck at all, GroundAt falls back to the planet.
+     *    On Polus that is a real place a hand's breadth below the decks; on the Fungle it is
+     *    metres below the highland the player is actually walking on, and every gap between two
+     *    described areas sent the eye down through the island. A drop of more than half a unit
+     *    onto NOTHING (no deck under the point) is therefore not believed: the last real ground
+     *    is held until a deck turns up again. Onto a deck or a pit - a described place, however
+     *    low - the drop is real and taken. Half a unit is well above any deck-to-planet step
+     *    (0.19) and well below any level the maps stack (the smallest ladder band is 1.35).
+     */
+    private static float lastGround = float.NaN;
+
+    private static float GroundUnderPlayer()
+    {
+        var pos = new Vector2(View.Position.X, View.Position.Y);
+        float? ride = NightfallRides.GroundOverride(pos, scene);
+        if (ride.HasValue)
+        {
+            lastGround = ride.Value;
+            return ride.Value;
+        }
+
+        float g = scene.GroundAt(View.Position);
+        if (!float.IsNaN(lastGround) && lastGround - g > 0.5f && !scene.DeckUnder(View.Position))
+            return lastGround;   // a hole in the description, not a drop
+        lastGround = g;
+        return g;
     }
 
     private static void Upload()

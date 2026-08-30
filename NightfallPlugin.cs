@@ -179,17 +179,28 @@ public class NightfallPlugin : BasePlugin
 [HarmonyPriority(Priority.Low)]
 internal static class NightfallVersionDisplayPatch
 {
+    // PERF: the line is built from a constant name and a constant version, so it was the same
+    // string sixty times a second. Built once and held; nothing here can invalidate it.
+    private static string cachedLine;
+
     public static void Postfix(PingTracker __instance)
     {
         if (__instance == null || __instance.text == null) return;
         string text = __instance.text.text;
         if (string.IsNullOrEmpty(text)) return;
 
-        string line = $"<color=#B18CFF>{NightfallPlugin.PluginName}</color> v{VersionDisplay.Format(NightfallPlugin.Version)}";
-        UnknownsCollective.Contribute(NightfallPlugin.PluginGuid, line);
+        cachedLine ??= $"<color=#B18CFF>{NightfallPlugin.PluginName}</color> v{VersionDisplay.Format(NightfallPlugin.Version)}";
+        UnknownsCollective.Contribute(NightfallPlugin.PluginGuid, cachedLine);
         text = UnknownsCollective.Render(__instance.text, text);
 
-        __instance.text.text = text;
+        // PERF: TextMeshPro rebuilds its mesh on EVERY assignment to .text, even when the string
+        // is identical - the setter marks the text dirty without comparing. Six of our mods write
+        // this same field one after another each frame (UC, UTS, Chance, HostFix, Nightfall,
+        // ForceImpostor) and at most the first of them changes anything, because
+        // UnknownsCollective.Render is idempotent within a frame. Comparing first turns six
+        // rebuilds per frame into one, and into none on frames where the ping text did not move.
+        if (!string.Equals(__instance.text.text, text, StringComparison.Ordinal))
+            __instance.text.text = text;
     }
 }
 

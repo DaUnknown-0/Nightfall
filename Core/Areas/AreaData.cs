@@ -117,6 +117,12 @@ public sealed class Wl
     public (float X0, float Y0, float X1, float Y1)? Diag;
     public float? T;
     public bool DiagSkirt;
+
+    /// A WINDOW BAND in a diagonal wall: parapet up to Sill, glass to Head, wall above.
+    /// A straight wall says the same thing with an `Op` of kind "window"; a diagonal takes no
+    /// openings (see the note in export_areas.mjs), so its one window is a property of the wall.
+    /// The Airship's bow is the reason: seven chords of glass over the console bank.
+    public (float Sill, float Head)? Window;
 }
 
 public sealed class Sk
@@ -156,6 +162,22 @@ public sealed class Fx
     public bool NoTrim;
     /// `frame: false` on a door opening.
     public bool NoFrame;
+    /// `post: true` stands a lamp on a pole (kit.js lamp): outdoors on the Fungle a lamp has no
+    /// ceiling to hang from. PostR is the pole's radius, PostMat its material.
+    public bool Post;
+    public float? PostR;
+    public string PostMat;
+
+    /// A lamp with no housing, only the light: a campfire lights the clearing, and the housing
+    /// stood over it as a floating lid (kit.js `housing: false`).
+    public bool NoHousing;
+
+    /// A `ribbon`: rows of polylines at different heights, joined into one skin. Each row is a
+    /// flat [x0,y0,x1,y1,...] list of the same length; `Heights` holds one height per row.
+    /// The Airship's hull flank and its keel are built this way.
+    public float[][] Rows;
+    public float[] Heights;
+    public float? Unit, VRepeat;
     public Faces Faces;
 }
 

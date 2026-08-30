@@ -1,4 +1,4 @@
-// Nightfall - Copyright (C) 2026 DaUnknown-0
+﻿// Nightfall - Copyright (C) 2026 DaUnknown-0
 // Licensed under GPL-3.0-or-later. See LICENSE for details.
 
 /*
@@ -84,20 +84,33 @@ public sealed class Scene3D
     /// can ask for it with --colliders to put the two side by side.
     public static bool UseAreas = true;
 
-    public static Scene3D Build(MapModel map)
+    public static Scene3D Build(MapModel map) => Build(map, default);
+
+    /// <param name="platform">The Airship's moving platform, if the game has one and the caller
+    /// could read it: its two end positions and its radius. Nothing in the map data describes it,
+    /// because it is not a place, it is a thing that moves - see BuildPlatformSlots.</param>
+    public static Scene3D Build(MapModel map, PlatformSpec platform)
     {
         // The sky is baked, and baking it takes long enough to be felt. Doing it here puts the cost
         // where the round is already paying one, instead of on the first frame after the
         // transformation - which is the single worst moment in the game to drop one.
         NightSky.EnsureBuilt();
 
-        if (UseAreas && MapAreaRegistry.AppliesTo(map.MapKey)) return BuildFromAreas(map);
+        if (UseAreas && MapAreaRegistry.AppliesTo(map.MapKey)) return BuildFromAreas(map, platform);
         return BuildFromColliders(map);
+    }
+
+    /// The moving platform as the game reports it, in Among Us world units.
+    public struct PlatformSpec
+    {
+        public NfVec2 Left, Right;
+        public float Radius;
+        public bool Valid;
     }
 
     // ================================================================================
     /// The built world: seventeen area files, plus the planet they stand on.
-    private static Scene3D BuildFromAreas(MapModel map)
+    private static Scene3D BuildFromAreas(MapModel map, PlatformSpec platform)
     {
         var s = new Scene3D();
         var b = new AreaBuilder(s.All);
@@ -123,6 +136,8 @@ public sealed class Scene3D
         // After ALL areas: whether a doorway is missing its floor depends on the decks of both
         // rooms beside it, and one of the two may be built later than the wall.
         b.SealThresholds();
+
+        if (platform.Valid) s.BuildPlatformSlots(b, platform);
 
         s.areas = b;
         s.MatchDoors(map, b);
@@ -842,7 +857,7 @@ public sealed class Scene3D
         {
             foreach (var t in buckets[ci])
             {
-                if (openDoors.Count > 0 && t.Emissive < 0f) continue;
+                if (hiddenAny && t.Emissive < 0f) continue;
 
                 // AND ONCE MORE PER TRIANGLE. A cell is four units across and the wedge is a
                 // wedge, so a kept cell still holds a good deal that is out of view or out of
@@ -883,5 +898,85 @@ public sealed class Scene3D
             openDoors.Remove(sourceId);
             foreach (var t in list) t.Emissive = 0f;
         }
+        hiddenAny = openDoors.Count > 0 || platformSlots.Count > 0;
     }
+
+    /// True while any triangle carries the -1 sentinel: open doors, or platform slots (all but one
+    /// of which are hidden at any time). Query checks the flag first so the per-triangle test costs
+    /// nothing on the maps that have neither.
+    private bool hiddenAny;
+
+    // ================================================================================
+    // The moving platform (Airship, Gap Room)
+    // ================================================================================
+    /*
+     * A THING THAT MOVES, IN A WORLD THAT CANNOT.
+     *
+     * The renderer walks a spatial index built once per round; nothing in it can change position.
+     * Doors get away with it because they only ever exist or not - a quad is either there or it
+     * carries the sentinel. The Gap Room's platform is the one object in the game that carries
+     * the player somewhere, and without it the first-person view had a hole where the ride is: the
+     * player crossed the pit at deck height while the ground under them, by the pit rule, was the
+     * pit floor, so the eye dropped 1.8 units mid-ride and looked at the machinery from the inside.
+     * That is the "glitching under the map" report.
+     *
+     * The same trick as the doors, applied along a line: the platform's disc is built once at
+     * every one of SlotCount positions between its two ends, all hidden, and each frame the slot
+     * nearest the real platform is the one shown. Twenty-four slots over the ~10-unit ride is a
+     * step of under half a unit, which at the raycaster's resolution reads as motion.
+     */
+    private readonly List<(int from, int to, NfVec2 at)> platformSlots = new();
+    private int platformSlot = -1;
+    private const int SlotCount = 24;
+
+    private void BuildPlatformSlots(AreaBuilder b, PlatformSpec spec)
+    {
+        for (int i = 0; i < SlotCount; i++)
+        {
+            float t = SlotCount == 1 ? 0f : i / (float)(SlotCount - 1);
+            var at = new NfVec2(spec.Left.X + (spec.Right.X - spec.Left.X) * t,
+                                spec.Left.Y + (spec.Right.Y - spec.Left.Y) * t);
+            int from = All.Count;
+            // A drum fixture, not a disc floor: a floor would register a deck, and the ground
+            // under the ride is decided by NightfallRides from the platform's real position, not
+            // by twenty-four phantom decks over the pit. Base 0.14 below the deck so the top sits
+            // flush with the floor on either side; the trim ring is the platform's own rim.
+            b.BuildArea(new Area
+            {
+                Id = $"platform_slot_{i}",
+                Deck = 0f,
+                Fixtures = new[]
+                {
+                    new Fx { Kind = "drum", At = (at.X, at.Y), H = 0.14f, R = spec.Radius,
+                             Deck = -0.14f, Mat = "#5a646c" },
+                },
+            });
+            platformSlots.Add((from, All.Count, at));
+            for (int k = from; k < All.Count; k++) All[k].Emissive = -1f;
+        }
+        hiddenAny = openDoors.Count > 0 || platformSlots.Count > 0;
+    }
+
+    /// Shows the slot nearest to where the platform actually is, hides the previous one.
+    public void SetPlatformPosition(NfVec2 pos)
+    {
+        if (platformSlots.Count == 0) return;
+        int best = 0;
+        float bestD = float.MaxValue;
+        for (int i = 0; i < platformSlots.Count; i++)
+        {
+            float dx = platformSlots[i].at.X - pos.X, dy = platformSlots[i].at.Y - pos.Y;
+            float d = dx * dx + dy * dy;
+            if (d < bestD) { bestD = d; best = i; }
+        }
+        if (best == platformSlot) return;
+        if (platformSlot >= 0)
+            for (int k = platformSlots[platformSlot].from; k < platformSlots[platformSlot].to; k++) All[k].Emissive = -1f;
+        for (int k = platformSlots[best].from; k < platformSlots[best].to; k++) All[k].Emissive = 0f;
+        platformSlot = best;
+    }
+
+    /// Is there any deck (floor) under this point at all, or only the planet fallback? The
+    /// hole guard in NightfallView asks this before believing a sudden drop.
+    public bool DeckUnder(NfVec2 p) => areas?.DeckUnder(p.X, p.Y) ?? true;
 }
