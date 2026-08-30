@@ -412,10 +412,25 @@ public static class NightfallState
     /// The round is decided. Reset is not enough on its own: the driver keeps running while the end
     /// screen is up, so the view has to be told to stay down as well - hence the flag, which lives
     /// until the next map is built.
+    ///
+    /// A PREFIX, AND FIRST, BECAUSE OF WHO ELSE IS ON THIS METHOD.
+    ///
+    /// This was a postfix until 2026-08-30, and on that day the client died at a round end: an
+    /// access violation inside the .NET runtime with System.Text.Json and the JIT on the stack,
+    /// at 971 MB private in a 32-bit process. The serialiser was the Tracker Export plugin's own
+    /// OnGameEnd POSTFIX, writing the round out - and two postfixes from two mods have no defined
+    /// order between them, so it ran with this world still in memory: 40 996 triangles, 39 MB of
+    /// meshes and 65 MB of textures that nobody needs once the round is over. The last round end
+    /// that exported successfully sat at 895 MB with a world a third that size.
+    ///
+    /// A prefix runs before the original method and therefore before every postfix, whoever wrote
+    /// it. So the world is gone by the time anyone serialises anything. It returns void on
+    /// purpose: HarmonyX runs all prefixes anyway, and this one must never skip OnGameEnd itself.
     [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameEnd))]
     internal static class GameEndPatch
     {
-        public static void Postfix()
+        [HarmonyPriority(Priority.First)]
+        public static void Prefix()
         {
             roundOver = true;
             NightfallView.Reset();

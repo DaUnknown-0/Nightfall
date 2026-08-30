@@ -1,5 +1,18 @@
 # Changelog — Nightfall
 
+## 0.3.1.7 (Testversion)
+
+**Abbau am Rundenende jetzt im Prefix, und zwar zuerst.** Am 30.08. starb der Client beim
+Rundenende (END-Knopf): Access Violation im .NET-Laufzeitsystem, mit System.Text.Json und dem
+JIT im Stack, auf dem Main-Thread, bei 971 MB privat in einem 32-Bit-Prozess. Serialisiert hat
+der Tracker-Export in SEINEM OnGameEnd-Postfix, und zwei Postfixe aus zwei Mods haben keine
+definierte Reihenfolge: er lief also mit dieser Welt im Rücken, 40 996 Dreiecke, 39 MB Meshes
+und 65 MB Texturen, die nach dem Rundenende niemand mehr braucht. Das letzte Rundenende, das
+erfolgreich exportiert hat, lag bei 895 MB mit einer Welt von einem Drittel der Größe. Der
+Abbau ist deshalb ein Prefix mit `Priority.First`: der läuft vor dem Original und damit vor
+jedem Postfix, wer auch immer ihn geschrieben hat. Er gibt void zurück, überspringt also
+niemals OnGameEnd selbst.
+
 ## 0.3.1.6 (Testversion)
 
 **Hoch und runter schauen.** Der Renderer kannte nur eine Blickrichtung in der Ebene, der
