@@ -46,6 +46,15 @@ public static class NightfallControls
     /// Where the player is looking. Eased towards the mouse direction rather than snapped, so the
     /// world does not jitter with every pixel of mouse movement.
     public static float Heading { get; private set; }
+
+    /// How far the view looks up or down, in radians, positive up. ASYMMETRIC ON PURPOSE: there is
+    /// something to see above (on the Airship the gas envelope hangs over the whole deck, and every
+    /// map has a ceiling), while below there is the floor one is standing on and then nothing. Up
+    /// 55 degrees, down 30.
+    public static float Pitch { get; private set; }
+
+    private const float PitchUp = 0.96f;     // 55 Grad
+    private const float PitchDown = -0.52f;  // 30 Grad
     /// Where the torch points. Leads the head slightly, which is what makes turning feel like
     /// swinging a lamp instead of rotating a turret.
     public static float TorchDir { get; private set; }
@@ -178,6 +187,7 @@ public static class NightfallControls
                       && me.cosmetics.currentBodySprite.BodySprite.flipX
                 ? NfMath.Pi : 0f;
             TorchDir = Heading;
+            Pitch = 0f;
             initialised = true;
         }
 
@@ -191,13 +201,18 @@ public static class NightfallControls
 
         // Mouse delta, not mouse position. Unbounded by the edges of the screen, which is the whole
         // difference between "I can look around" and "I can look forwards and backwards".
-        float dx = 0f;
+        float dx = 0f, dy = 0f;
         try { dx = Input.GetAxisRaw("Mouse X"); } catch { }
+        try { dy = Input.GetAxisRaw("Mouse Y"); } catch { }
 
         float sens = (NightfallPlugin.MouseSensitivity?.Value ?? 3.2f) * 0.06f;
         // Moving the mouse right must turn the view right, and screen-right is a NEGATIVE change of
         // a counter-clockwise world angle.
         Heading = NfMath.WrapAngle(Heading - dx * sens);
+        // Maus nach oben ist in Unity ein POSITIVES "Mouse Y", und nach oben schauen ist ein
+        // positiver Pitch - kein Vorzeichenwechsel noetig. Nicht gewrappt, sondern geklemmt:
+        // ueber den Zenit hinaus zu schauen gibt es nicht.
+        Pitch = Mathf.Clamp(Pitch + dy * sens, PitchDown, PitchUp);
 
         // The torch trails the head very slightly. That lag is what the held flashlight leans by on
         // screen, and it is the only reason a turn reads as swinging a lamp rather than as the

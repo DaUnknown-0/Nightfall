@@ -271,6 +271,7 @@ public static class NightfallState
         var pos = me.GetTruePosition();
         v.Position = new NfVec2(pos.x, pos.y);
         v.Heading = NightfallControls.Heading;
+        v.Pitch = NightfallControls.Pitch;
         v.FlashlightDir = NightfallControls.TorchDir;
         v.Time = Time.time;
 

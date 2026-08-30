@@ -46,6 +46,12 @@ public struct ViewParams
     public NfVec2 Position;
     /// Where the camera looks, in radians, counter-clockwise from +X.
     public float Heading;
+
+    /// How far the view is tilted, in radians, positive UP. It is not a camera rotation: the
+    /// renderer shifts the HORIZON by tan(Pitch) instead (Raster3D.HorizonY), the way the
+    /// software renderers of the nineties did, because every column of this rasteriser is an
+    /// azimuth and a real rotation would have to give that up. Vertical edges stay vertical.
+    public float Pitch;
     /// Horizontal field of view in radians.
     public float Fov;
     /// Camera height above the floor, in world units.

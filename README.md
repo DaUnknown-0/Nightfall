@@ -98,7 +98,13 @@ F8/Ctrl+F8 (export map geometry, or additionally every object individually) no l
 Nightfall itself: that is `NightfallSurveyTool` now, its own plugin (see the layout table above and
 its own README). Install it only to survey a new map; for players it stays out.
 
-The mouse turns the view, WASD walks relative to it. With a task, meeting, chat **or the map open
+The mouse turns the view AND tilts it: up 55 degrees, down 30. Asymmetric on purpose, because
+above there is something to see (the Airship's gas envelope hangs over the whole deck, and every
+room has a ceiling) and below there is the floor one is standing on and then nothing. The tilt is
+not a camera rotation but a shift of the horizon (`Raster3D.HorizonY`), so vertical edges stay
+vertical, which is what keeps a corridor readable at 55 degrees.
+
+WASD walks relative to the view. With a task, meeting, chat **or the map open
 (the sabotage map too)** the view freezes and the cursor is released, so that a click on a console
 or on a reactor does not yank the player around. On top of that, **Alt** releases the cursor at any
 time for as long as the key is held.

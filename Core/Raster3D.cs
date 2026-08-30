@@ -105,6 +105,19 @@ public sealed class Raster3D
     public int LastVisible;
     public long LastCoverage;
 
+    /// THE SCREEN ROW THE HORIZON SITS ON. Without pitch this is the middle of the picture, and
+    /// it was written as `Height * 0.5f` in six places. Looking up moves the horizon DOWN the
+    /// screen (screen y grows downward), which is why the sign is a plus.
+    ///
+    /// The tangent is what makes this a shear rather than a rotation, and the clamp is what keeps
+    /// it usable: at 80 degrees tan is 5,7 and the picture stretches into a smear. The view itself
+    /// clamps much earlier (NightfallControls), this is only the backstop.
+    private float HorizonY(in ViewParams v, float f)
+    {
+        float p = MathF.Max(-1.05f, MathF.Min(1.05f, v.Pitch));
+        return Height * 0.5f + MathF.Tan(p) * f * 0.5f * Height;
+    }
+
     public void Resize(int w, int h)
     {
         if (Width == w && Height == h && Pixels.Length > 0) return;
@@ -194,6 +207,7 @@ public sealed class Raster3D
     private void DrawStandingProps(Scene3D scene, in ViewParams v, float f, float aspect,
                                    float cy, float sy)
     {
+        float hor = HorizonY(v, f);
         var list = scene.Standing;
         if (list.Count == 0) return;
 
@@ -219,8 +233,8 @@ public sealed class Raster3D
 
             float iz = 1f / zf;
             float cxs = (xr * f / aspect) * iz * 0.5f * Width + Width * 0.5f;
-            float footY = Height * 0.5f + ((v.EyeHeight - p.Base) * f) * iz * 0.5f * Height;
-            float topY = Height * 0.5f - ((p.Base + p.Height - v.EyeHeight) * f) * iz * 0.5f * Height;
+            float footY = hor + ((v.EyeHeight - p.Base) * f) * iz * 0.5f * Height;
+            float topY = hor - ((p.Base + p.Height - v.EyeHeight) * f) * iz * 0.5f * Height;
 
             float hPx = footY - topY;
             float wPx = (p.Width * f / aspect) * iz * 0.5f * Width;
@@ -295,6 +309,7 @@ public sealed class Raster3D
         // it needs no lock - the same argument that makes the bands safe.
         const float near = 0.06f;
         var pos = v.Position; float eyeH = v.EyeHeight; int h = Height;
+        float hor = HorizonY(v, f);
         var top = extentTop; var bot = extentBottom;
 
         void One(int i)
@@ -313,9 +328,9 @@ public sealed class Raster3D
                 return;
             }
 
-            float ya = h * 0.5f - (a.P.Y * f) / a.P.Z * 0.5f * h;
-            float yb = h * 0.5f - (b.P.Y * f) / b.P.Z * 0.5f * h;
-            float yc = h * 0.5f - (c.P.Y * f) / c.P.Z * 0.5f * h;
+            float ya = hor - (a.P.Y * f) / a.P.Z * 0.5f * h;
+            float yb = hor - (b.P.Y * f) / b.P.Z * 0.5f * h;
+            float yc = hor - (c.P.Y * f) / c.P.Z * 0.5f * h;
 
             top[i] = Math.Max(0, (int)MathF.Floor(MathF.Min(ya, MathF.Min(yb, yc))));
             bot[i] = Math.Min(h - 1, (int)MathF.Ceiling(MathF.Max(ya, MathF.Max(yb, yc))));
@@ -348,7 +363,7 @@ public sealed class Raster3D
     {
         NightSky.EnsureBuilt();
         var sky = NightSky.Pixels;
-        float horizon = Height * 0.5f;
+        float horizon = HorizonY(v, f);
 
         if (skyX0.Length < Width)
         {
@@ -394,7 +409,9 @@ public sealed class Raster3D
                 return;
             }
 
-            float elev = NfMath.Clamp01((horizon - y) / MathF.Max(1f, horizon));
+            // Gegen die halbe Bildhoehe, NICHT gegen `horizon`: sonst staucht sich der Himmel,
+            // sobald der Horizont wandert, und die Sterne kroechen beim Hochschauen.
+            float elev = NfMath.Clamp01((horizon - y) / MathF.Max(1f, Height * 0.5f));
             float fy = elev * (NightSky.H - 1);
             int y0 = (int)fy;
             int y1 = Math.Min(NightSky.H - 1, y0 + 1);
@@ -468,11 +485,13 @@ public sealed class Raster3D
         }
         var wa = Back(a); var wb = Back(b); var wc = Back(c);
 
+float hor = HorizonY(v, f);
+
         (float sx, float sy, float iz, float u, float vv, float wx, float wy, float wz) P(Vtx3 vt, Vtx3 src)
         {
             float iz = 1f / vt.P.Z;
             float sx = (vt.P.X * f / aspect) * iz * 0.5f * Width + Width * 0.5f;
-            float sy2 = Height * 0.5f - (vt.P.Y * f) * iz * 0.5f * Height;
+            float sy2 = hor - (vt.P.Y * f) * iz * 0.5f * Height;
             return (sx, sy2, iz, vt.U * iz, vt.V * iz,
                     src.P.X * iz, src.P.Y * iz, src.P.Z * iz);
         }
@@ -751,6 +770,7 @@ public sealed class Raster3D
     private void DrawBillboards(in ViewParams v, float f, float aspect, float cy, float sy,
                                 IReadOnlyList<Billboard> list)
     {
+        float hor = HorizonY(v, f);
         var eye = v.Position;
         // Persistent buffer, same as propOrder above: this used to be a fresh List<int> plus a
         // capturing sort lambda allocated every frame (AUDIT-2026-08-15).
@@ -775,8 +795,8 @@ public sealed class Raster3D
             float cxs = (xr * f / aspect) * iz * 0.5f * Width + Width * 0.5f;
             // Feet at world height bb.Base (a deck, a stair, or the air for a marker), head at
             // Base + Height, both relative to the eye.
-            float footY = Height * 0.5f + ((v.EyeHeight - bb.Base) * f) * iz * 0.5f * Height;
-            float topY = Height * 0.5f - ((bb.Base + bb.Height - v.EyeHeight) * f) * iz * 0.5f * Height;
+            float footY = hor + ((v.EyeHeight - bb.Base) * f) * iz * 0.5f * Height;
+            float topY = hor - ((bb.Base + bb.Height - v.EyeHeight) * f) * iz * 0.5f * Height;
 
             float hPx = footY - topY;
             if (hPx < 2f) continue;

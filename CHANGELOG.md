@@ -1,5 +1,15 @@
 # Changelog — Nightfall
 
+## 0.3.1.6 (Testversion)
+
+**Hoch und runter schauen.** Der Renderer kannte nur eine Blickrichtung in der Ebene, der
+Horizont lag fest in der Bildmitte. `ViewParams.Pitch` verschiebt ihn jetzt um tan(Pitch)
+(`Raster3D.HorizonY`), statt die Kamera zu drehen: jede Spalte dieses Rasterisierers IST ein
+Azimut, eine echte Drehung müsste das aufgeben. Geometrisch ein Schub in Bildschirm-y, also
+bleiben senkrechte Kanten senkrecht. Die Maus steuert es mit, nach oben weiter als nach unten
+(55 gegen 30 Grad): oben hängt die Gashülle über dem Deck, unten der eigene Fußboden. Das
+Render-Werkzeug kennt dafür `--pitch <grad>`.
+
 ## 0.3.1.5 (Testversion)
 
 **Die Airship sieht von außen aus wie ein Luftschiff.** Bisher endete das Schiff mod-seitig an
