@@ -1,5 +1,14 @@
 # Changelog — Nightfall
 
+## Unreleased
+
+### Performance (Audit 2026-09-01)
+- **Tastenlabels** (`NightfallKeys.cs`): `Pretty(KeyCode)` lief für jeden aktiven Button jeden
+  Frame in den Default-Zweig mit bis zu drei `Enum.ToString()`-Aufrufen (Reflection plus neuer
+  String). Ergebnis pro Taste jetzt gecacht.
+- **Collective-HUD-Zeile** (`UnknownsCollective.cs`, in allen fünf Mods gleich): Block gecacht,
+  neu nur bei geänderter Mitgliedszeile, Anzahl, Auf-/Zuklappen oder Lobby-/Runden-Wechsel.
+
 ## 0.3.1.7 (Testversion)
 
 **Abbau am Rundenende jetzt im Prefix, und zwar zuerst.** Am 30.08. starb der Client beim

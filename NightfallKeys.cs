@@ -413,7 +413,22 @@ public static class NightfallKeys
     }
 
     /// KeyCode names are not what a key looks like on a keyboard.
-    private static string Pretty(KeyCode k) => k switch
+    // PERF: Label() asks this for every active button every frame, and the default arm below
+    // calls Enum.ToString() (a reflection-backed name lookup plus a fresh string) up to three
+    // times per call. The result never changes for a given key, so it is kept.
+    private static readonly Dictionary<KeyCode, string> prettyCache = new Dictionary<KeyCode, string>();
+
+    private static string Pretty(KeyCode k)
+    {
+        if (!prettyCache.TryGetValue(k, out var s))
+        {
+            s = PrettyUncached(k);
+            prettyCache[k] = s;
+        }
+        return s;
+    }
+
+    private static string PrettyUncached(KeyCode k) => k switch
     {
         KeyCode.Comma => ",",
         KeyCode.Period => ".",
