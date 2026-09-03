@@ -203,6 +203,30 @@ public static class NightfallKeys
     private static readonly Dictionary<object, TMPro.TextMeshPro> labels = new();
     private static int lastButtonCount = -1;
 
+    // AUDIT-2026-09-03, KRITISCH: Blank() writes KeyCode.None into every button's `hotkey` for as
+    // long as the chat has focus. On the frame the chat closes, Assign() ran BEFORE this fix and
+    // saw that None for any button with neither a Preferred entry nor an `assigned` entry yet (a
+    // button that only just appeared while the player was typing) - `own = Read(b)` read back
+    // None, so pass 1 treated it as "needs a key" and pass 2 handed it a pool key that then
+    // persisted forever. `preBlank` remembers, for every button Blank() touches, the value it had
+    // the FIRST time it was blanked this chat session; Restore() writes that value back before
+    // Assign() ever looks at the button again.
+    private static readonly Dictionary<object, KeyCode?> preBlank = new();
+
+    // AUDIT-2026-09-03: per-run and per-button caches for the Tick() perf fix below. `activeCache`
+    // is filled once per Assign() call and read back by Label() so `Active(b)` - a delegate
+    // invocation through reflection - is not paid twice per button per run. `labelTextCache` mirrors
+    // the last string put into a label's `tmp.text`, so an unchanged key does not touch TMP's
+    // (marshalled) text setter.
+    private static readonly Dictionary<object, bool> activeCache = new();
+    private static readonly Dictionary<object, string> labelTextCache = new();
+
+    /// True on the frame after the chat had focus and no longer does (AUDIT-2026-09-03 Tick() perf
+    /// fix, letter b): one of the three conditions under which Assign()/Label() run.
+    private static bool wasTyping;
+    /// Time.time at the end of the last Assign()/Label() run (AUDIT-2026-09-03 Tick() perf fix).
+    private static float lastAssign = -99f;
+
     // AUDIT-2026-08-16: Assign() ran every frame while NightfallPlugin.KeysAlwaysOn is true (the
     // default), which is every round whether or not the first-person view is even on. A fresh
     // HashSet<KeyCode> and List<object> per call was therefore not a rare cost but a standing one.
@@ -217,6 +241,11 @@ public static class NightfallKeys
         assigned.Clear();
         labels.Clear();
         lastButtonCount = -1;
+        preBlank.Clear();
+        activeCache.Clear();
+        labelTextCache.Clear();
+        wasTyping = false;
+        lastAssign = -99f;
     }
 
     // ================================================================================
@@ -234,7 +263,8 @@ public static class NightfallKeys
 
             // HudManager.Start throws the old buttons away and builds new ones. The list shrinking
             // or growing is the cheapest reliable signal that the instances have been replaced.
-            if (list.Count != lastButtonCount)
+            bool listChanged = list.Count != lastButtonCount;
+            if (listChanged)
             {
                 lastButtonCount = list.Count;
                 names.Clear();
@@ -251,18 +281,40 @@ public static class NightfallKeys
             // chat would set off whatever ability happens to sit on those letters.
             //
             // So while the chat has focus, every button this layer manages is written to None: TOR's
-            // GetKeyDown then matches nothing. The next frame after the chat closes, Assign hands the
-            // real keys back - it runs every frame and is idempotent. Label is skipped rather than
-            // run with the blanked keys, so the printed key stays on the button and the player is
-            // not told their key disappeared.
+            // GetKeyDown then matches nothing. Label is skipped rather than run with the blanked
+            // keys, so the printed key stays on the button and the player is not told their key
+            // disappeared. This gate itself runs every frame regardless of anything below.
             if (ChatHasFocus())
             {
                 Blank(list);
+                wasTyping = true;
                 return;
             }
 
-            Assign(list);
-            if (NightfallPlugin.ShowKeyOnButton?.Value ?? true) Label(list);
+            // AUDIT-2026-09-03 (KRITISCH): the frame this fires is exactly the frame that used to
+            // hand a fresh button a permanent pool key (see preBlank's comment above) - Restore()
+            // puts back what Blank() overwrote before Assign() gets a chance to look at it.
+            bool chatJustClosed = wasTyping;
+            wasTyping = false;
+
+            // PERF (AUDIT-2026-09-03): Assign()/Label() walk every button and, per active one, do a
+            // delegate call, several reflection field accesses and a TMP text/gameObject touch.
+            // KeysAlwaysOn (the default) used to mean that walk ran every single frame of every
+            // round whether or not anything could possibly have changed. It now runs only when
+            // something COULD have: the button list was just rebuilt, the chat just gave the
+            // keyboard back (which also needs Restore() first, see above), or a quarter second has
+            // passed since the last run. That last arm is a safety net, not a guess: TOR's own
+            // ReloadHotkeys can run one frame after resetVariables rebuilds the button list, and if
+            // it lands on a frame this layer would otherwise skip, its own re-binding would sit
+            // unnoticed until the next scheduled run instead of the next frame.
+            bool due = Time.time - lastAssign >= 0.25f;
+            if (listChanged || chatJustClosed || due)
+            {
+                lastAssign = Time.time;
+                Restore();
+                Assign(list);
+                if (NightfallPlugin.ShowKeyOnButton?.Value ?? true) Label(list);
+            }
         }
         catch (Exception e)
         {
@@ -293,8 +345,28 @@ public static class NightfallKeys
         foreach (var b in list)
         {
             if (b == null) continue;
+            // Remember what the button carried the FIRST time this chat session blanks it, before
+            // it gets overwritten - not on every frame the chat stays open, which would just keep
+            // recording None. See preBlank's field comment for why this exists.
+            if (!preBlank.ContainsKey(b)) preBlank[b] = Read(b);
             try { Write(b, KeyCode.None); } catch { }
         }
+    }
+
+    /// Writes back whatever Blank() overwrote, for every button it touched, then forgets the
+    /// record. Must run before Assign() looks at a button again: Assign() has no way to tell a
+    /// button that genuinely has no key (TOR's Shifter/garlic/defuse buttons pass null on purpose)
+    /// apart from one that was simply never blanked, so without this the first Assign() after the
+    /// chat closes would treat every blanked button as if it needed a fresh pool key.
+    private static void Restore()
+    {
+        if (preBlank.Count == 0) return;
+        foreach (var kv in preBlank)
+        {
+            if (kv.Value.HasValue) Write(kv.Key, kv.Value.Value);
+            else WriteNullable(kv.Key, null);
+        }
+        preBlank.Clear();
     }
 
     /// Hands out keys. Two passes on purpose: everything that already owns a key claims it first,
@@ -305,11 +377,18 @@ public static class NightfallKeys
         var needs = needsScratch;
         used.Clear();
         needs.Clear();
+        activeCache.Clear();
 
         // Pass 1 - the buttons the player is actually holding this frame, in list order.
         foreach (var b in list)
         {
-            if (b == null || !Active(b)) continue;
+            if (b == null) continue;
+            // Cached here rather than recomputed: Label() reuses this same run's result instead of
+            // calling the HasButton delegate a second time per button (AUDIT-2026-09-03 Tick() perf
+            // fix, letter c).
+            bool active = Active(b);
+            activeCache[b] = active;
+            if (!active) continue;
 
             // A written-down key wins over the mod's own, because it was chosen precisely to avoid
             // the clash the mod could not see.
@@ -363,7 +442,10 @@ public static class NightfallKeys
         foreach (var b in list)
         {
             if (b == null) continue;
-            bool active = Active(b);
+            // Reused from Assign()'s pass 1 this same run, rather than a second Active() call
+            // (AUDIT-2026-09-03 Tick() perf fix, letter c). Assign() always runs before Label() and
+            // always visits every button in `list`, so every key here is present.
+            bool active = activeCache.TryGetValue(b, out var a) && a;
 
             if (!labels.TryGetValue(b, out var tmp) || tmp == null)
             {
@@ -371,6 +453,10 @@ public static class NightfallKeys
                 tmp = MakeLabel(b);
                 if (tmp == null) continue;
                 labels[b] = tmp;
+                // A newly-built label starts with `tmp.text == ""`. If a stale cache entry from a
+                // previous button instance that happened to share this object reference still says
+                // "" too, the write below would be (wrongly) skipped as a no-op.
+                labelTextCache.Remove(b);
             }
 
             var go = tmp.gameObject;
@@ -381,7 +467,14 @@ public static class NightfallKeys
             if (!show) continue;
 
             string text = Pretty(key.Value);
-            if (tmp.text != text) tmp.text = text;
+            // Cached per button rather than read back through tmp.text's Il2Cpp getter, which
+            // marshals the string across the interop boundary on every call whether or not it
+            // changed (AUDIT-2026-09-03 Tick() perf fix, letter e).
+            if (!labelTextCache.TryGetValue(b, out var lastText) || lastText != text)
+            {
+                tmp.text = text;
+                labelTextCache[b] = text;
+            }
         }
     }
 
@@ -504,6 +597,17 @@ public static class NightfallKeys
     /// there. The filter is exact rather than a name guess: an assembly is swept if it IS The
     /// Other Roles or if it REFERENCES it, which is precisely the set of assemblies that could
     /// have constructed a CustomButton.
+    ///
+    /// AUDIT-2026-09-03: even within a relevant assembly, every field of every type used to be
+    /// read (GetValue) and, if it was an IEnumerable, fully enumerated - thousands of accesses per
+    /// call, most of them fields that can never hold a CustomButton, each one a chance to run a
+    /// type's static initializer for the first time in the middle of a round. `MayHoldButton`
+    /// narrows the field-type check itself to the shapes that actually occur in this mod family
+    /// (a plain CustomButton field, an array of them, or a generic collection with CustomButton as
+    /// one of its type arguments) before GetValue is ever called, which brings the scan down to
+    /// the ~35 fields that genuinely exist: plain CustomButton fields, Copycat's
+    /// `Dictionary<Ability, CustomButton>`, PoltergeistFx's `HashSet<CustomButton>` and
+    /// `Dictionary<CustomButton, float>`, and `CustomButton.buttons` itself (`List<CustomButton>`).
     private static void MapNames(IList list)
     {
         const BindingFlags St = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static;
@@ -523,14 +627,22 @@ public static class NightfallKeys
             }
             if (!relevant) continue;
 
+            // A merged assembly (Unknown's Collection ships ILRepacked) can fail to load a few
+            // types; the exception still carries the ones that DID load, and dropping the whole
+            // assembly over one bad type would cost every button name it owns. Same pattern as
+            // UsefulTORStuff\SettingsOverlayView.cs's ScanOptionOwners.
             Type[] types;
-            try { types = asm.GetTypes(); } catch { continue; }
+            try { types = asm.GetTypes(); }
+            catch (ReflectionTypeLoadException partial) { types = partial.Types; }
+            catch { continue; }
             foreach (var t in types)
             {
+                if (t == null) continue;
                 FieldInfo[] fields;
                 try { fields = t.GetFields(St); } catch { continue; }
                 foreach (var f in fields)
                 {
+                    if (!MayHoldButton(f.FieldType)) continue;
                     try
                     {
                         if (f.FieldType == customButtonType)
@@ -564,6 +676,21 @@ public static class NightfallKeys
         }
     }
 
+    /// True when a static field of this type could possibly hold a CustomButton: the type itself,
+    /// an array of it, or a generic type (Dictionary&lt;Ability, CustomButton&gt;,
+    /// HashSet&lt;CustomButton&gt;, List&lt;CustomButton&gt;, Dictionary&lt;CustomButton, float&gt;
+    /// and so on) with it as one of the generic arguments. See MapNames' AUDIT-2026-09-03 note for
+    /// why this check exists ahead of GetValue rather than being folded into the loop below.
+    private static bool MayHoldButton(Type t)
+    {
+        if (t == customButtonType) return true;
+        if (t.IsArray && t.GetElementType() == customButtonType) return true;
+        if (t.IsGenericType)
+            foreach (var arg in t.GetGenericArguments())
+                if (arg == customButtonType) return true;
+        return false;
+    }
+
     /// Forgets buttons that are no longer in TOR's list, so the dictionaries do not grow for the
     /// whole session (HudManager.Start rebuilds every button of every round).
     private static void Prune()
@@ -574,6 +701,13 @@ public static class NightfallKeys
         foreach (var k in stale) labels.Remove(k);
 
         if (assigned.Count > 400) assigned.Clear();
+
+        // AUDIT-2026-09-03: these are keyed by button instance, and a list rebuild (the only time
+        // Prune() runs) means HudManager.Start has thrown every old instance away. Stale keys would
+        // just be dead weight, same reasoning as `assigned` above.
+        activeCache.Clear();
+        labelTextCache.Clear();
+        preBlank.Clear();
     }
 
     private static bool Active(object button)
@@ -596,6 +730,11 @@ public static class NightfallKeys
     {
         try
         {
+            // Always reads `hotkey` back before writing: TOR's own CustomButton.ReloadHotkeys
+            // (called from RPCProcedure.resetVariables, often a few frames after HudManager.Start
+            // with no change in button-list length) can overwrite `hotkey` for the Q/F/G/H
+            // originals at any time, so a cache of "the last key WE wrote" would go stale without
+            // Nightfall ever finding out. Assign() runs at most 4x/s, so this readback is cheap.
             var cur = (KeyCode?)fHotkey.GetValue(button);
             if (cur.HasValue && cur.Value == key) return;
             // `hotkey` only. `originalHotkey` stays untouched, so TOR's own re-binding to the Among
@@ -603,6 +742,15 @@ public static class NightfallKeys
             // before this does, every frame, and loses the last word where it has to.
             fHotkey.SetValue(button, key);
         }
+        catch { }
+    }
+
+    /// Restore()'s companion for a button whose ORIGINAL hotkey was null (TOR's Shifter, garlic and
+    /// defuse buttons pass no key at all, see the Preferred registry above) rather than a KeyCode -
+    /// `Write` can only ever hand out a KeyCode, never null, so it cannot put that case back.
+    private static void WriteNullable(object button, KeyCode? key)
+    {
+        try { fHotkey.SetValue(button, key); }
         catch { }
     }
 }

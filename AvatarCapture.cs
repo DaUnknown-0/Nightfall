@@ -57,7 +57,128 @@ public static class AvatarCapture
     private const float RefreshSeconds = 2.5f;
     private static float lastAnyCapture;
 
-    public static void Clear() { entries.Clear(); petEntries.Clear(); }
+    // AUDIT-2026-09-03: CaptureInto used to build a fresh Camera GameObject, RenderTexture, readback
+    // Texture2D, Color32[] and byte[] on EVERY capture. With up to fifteen players and a pet each
+    // re-photographed every RefreshSeconds, that was one full set of Unity/GC garbage every couple
+    // of seconds for the whole round. The camera is now a single persistent, disabled object reused
+    // for every capture; render targets are pooled by (rounded) pixel size instead of one per shot;
+    // the row-flip scratch buffer is a single reused array grown on demand. None of this changes
+    // what gets photographed or how it looks - only what gets thrown away afterwards.
+    private static GameObject captureCamGo;
+    private static Camera captureCam;
+
+    private sealed class RtEntry
+    {
+        public RenderTexture Rt;
+        public Texture2D Readback;
+    }
+
+    /// Render targets, keyed by their exact (already-rounded) pixel size. Rounding the requested
+    /// size up to a multiple of 32 before the lookup keeps this small - a handful of buckets rather
+    /// than one entry per crewmate's exact silhouette width.
+    private static readonly Dictionary<(int w, int h), RtEntry> rtCache = new();
+    /// Insertion order of `rtCache`, so a cache that somehow grows past `MaxRtCacheEntries` (an
+    /// odd mix of silhouette sizes across a round with many players) has something to evict by.
+    private static readonly List<(int w, int h)> rtOrder = new();
+    /// A hard ceiling on how many distinct render-target sizes are pooled at once. Each entry is a
+    /// RenderTexture plus a readback Texture2D, so this bounds the pool's GPU/CPU memory rather
+    /// than letting it grow for the whole round.
+    private const int MaxRtCacheEntries = 24;
+
+    private static byte[] rgbaScratch = Array.Empty<byte>();
+
+    private static Camera GetCamera()
+    {
+        if (captureCam == null)
+        {
+            captureCamGo = new GameObject("NightfallAvatarCam");
+            UnityEngine.Object.DontDestroyOnLoad(captureCamGo);
+            captureCam = captureCamGo.AddComponent<Camera>();
+            captureCam.orthographic = true;
+            captureCam.cullingMask = 1 << IsolationLayer;
+            captureCam.clearFlags = CameraClearFlags.SolidColor;
+            captureCam.backgroundColor = new Color(0f, 0f, 0f, 0f); // transparent: alpha carries the cutout
+            captureCam.nearClipPlane = -100f;
+            captureCam.farClipPlane = 100f;
+            captureCam.enabled = false;
+        }
+        return captureCam;
+    }
+
+    private static void DestroyRt(RtEntry e)
+    {
+        try { if (e.Rt != null) { e.Rt.Release(); UnityEngine.Object.Destroy(e.Rt); } } catch { }
+        try { if (e.Readback != null) UnityEngine.Object.Destroy(e.Readback); } catch { }
+    }
+
+    private static RtEntry GetRt(int texW, int texH)
+    {
+        var key = (texW, texH);
+        if (rtCache.TryGetValue(key, out var e))
+        {
+            // Unity's overloaded `==` treats a destroyed-but-not-yet-nulled native object as
+            // "fake null": the C# reference is still non-null but every native call on it throws.
+            // A stale cache entry pointing at one would fail this player's capture every single
+            // frame instead of just once, so discard it here and fall through to rebuild fresh.
+            if (e.Rt == null || e.Readback == null)
+            {
+                DestroyRt(e);
+                rtCache.Remove(key);
+                rtOrder.Remove(key);
+                e = null;
+            }
+        }
+
+        if (e == null)
+        {
+            e = new RtEntry
+            {
+                Rt = new RenderTexture(texW, texH, 16, RenderTextureFormat.ARGB32),
+                Readback = new Texture2D(texW, texH, TextureFormat.RGBA32, false),
+            };
+            e.Rt.Create();
+            rtCache[key] = e;
+            rtOrder.Add(key);
+
+            // Cap how many distinct sizes are pooled at once: evict the oldest bucket rather than
+            // let the pool grow for the whole round.
+            if (rtOrder.Count > MaxRtCacheEntries)
+            {
+                var oldestKey = rtOrder[0];
+                rtOrder.RemoveAt(0);
+                if (rtCache.TryGetValue(oldestKey, out var oldest))
+                {
+                    rtCache.Remove(oldestKey);
+                    DestroyRt(oldest);
+                }
+            }
+        }
+
+        if (!e.Rt.IsCreated()) e.Rt.Create();
+        return e;
+    }
+
+    private static byte[] GetRgbaScratch(int length)
+    {
+        if (rgbaScratch.Length < length) rgbaScratch = new byte[length];
+        return rgbaScratch;
+    }
+
+    private static int RoundUp32(int v) => (v + 31) / 32 * 32;
+
+    public static void Clear()
+    {
+        entries.Clear();
+        petEntries.Clear();
+
+        foreach (var e in rtCache.Values) DestroyRt(e);
+        rtCache.Clear();
+        rtOrder.Clear();
+
+        try { if (captureCamGo != null) UnityEngine.Object.Destroy(captureCamGo); } catch { }
+        captureCamGo = null;
+        captureCam = null;
+    }
 
     /// The sprite for a player, photographing them first if needed. Returns null while no valid
     /// photograph exists, which the caller treats as "fall back to the drawn crewmate".
@@ -169,9 +290,13 @@ public static class AvatarCapture
     {
         var moved = new List<(GameObject go, int layer)>();
         var masked = new List<(SpriteRenderer r, SpriteMaskInteraction mode)>();
-        GameObject camGo = null;
         RenderTexture rt = null;
         RenderTexture previous = null;
+        // Whether `previous` was actually captured from RenderTexture.active before this method
+        // set it to something else. Restoring on `previous != null` is wrong: a legitimately null
+        // "no active render texture" state would then never be restored, and the render target this
+        // method pooled would stay stuck as RenderTexture.active if ReadPixels/Apply throws.
+        bool activeSet = false;
         Texture2D readback = null;
 
         try
@@ -265,34 +390,33 @@ public static class AvatarCapture
             int texH = TexHeight;
             int texW = Mathf.Clamp(Mathf.RoundToInt(texH * frameW / frameH), 8, 512);
 
-            camGo = new GameObject("NightfallAvatarCam");
-            var cam = camGo.AddComponent<Camera>();
-            cam.orthographic = true;
+            // Round up to a multiple of 32 so the render-target cache (keyed by exact pixel size)
+            // settles on a handful of buckets instead of a fresh RenderTexture per crewmate's exact
+            // silhouette. The camera's aspect is matched to the ROUNDED size below, so the extra
+            // pixels widen the frame slightly rather than stretching the picture into it.
+            texW = RoundUp32(texW);
+            texH = RoundUp32(texH);
+            frameW = frameH * texW / texH;
+
+            var cam = GetCamera();
             cam.orthographicSize = frameH * 0.5f;
             cam.aspect = frameW / frameH;
-            cam.cullingMask = 1 << IsolationLayer;
-            cam.clearFlags = CameraClearFlags.SolidColor;
-            cam.backgroundColor = new Color(0f, 0f, 0f, 0f);   // transparent: alpha carries the cutout
-            cam.nearClipPlane = -100f;
-            cam.farClipPlane = 100f;
-            cam.enabled = false;
-            camGo.transform.position = new Vector3(centre.x, centre.y, -20f);
+            cam.transform.position = new Vector3(centre.x, centre.y, -20f);
 
-            rt = new RenderTexture(texW, texH, 16, RenderTextureFormat.ARGB32);
-            rt.Create();
+            var rtEntry = GetRt(texW, texH);
+            rt = rtEntry.Rt;
+            readback = rtEntry.Readback;
             cam.targetTexture = rt;
             cam.Render();
 
             previous = RenderTexture.active;
+            activeSet = true;
             RenderTexture.active = rt;
-            readback = new Texture2D(texW, texH, TextureFormat.RGBA32, false);
             readback.ReadPixels(new Rect(0, 0, texW, texH), 0, 0, false);
             readback.Apply(false);
-            RenderTexture.active = previous;
-            previous = null;
 
             var src = readback.GetPixels32();
-            var rgba = new byte[texW * texH * 4];
+            var rgba = GetRgbaScratch(texW * texH * 4);
             // A rendered texture starts at the bottom row, the renderer's billboards start at the
             // top, so the rows are flipped here rather than in the per-pixel sampling path.
             for (int y = 0; y < texH; y++)
@@ -359,14 +483,9 @@ public static class AvatarCapture
             {
                 try { if (r != null) r.maskInteraction = mode; } catch { }
             }
-            try { if (previous != null) RenderTexture.active = previous; } catch { }
-            try { if (readback != null) UnityEngine.Object.Destroy(readback); } catch { }
-            try
-            {
-                if (rt != null) { rt.Release(); UnityEngine.Object.Destroy(rt); }
-            }
-            catch { }
-            try { if (camGo != null) UnityEngine.Object.Destroy(camGo); } catch { }
+            if (activeSet) { try { RenderTexture.active = previous; } catch { } }
+            // The camera, its RenderTexture and the readback Texture2D are all persistent/pooled
+            // now (AUDIT-2026-09-03) - nothing to destroy per capture. They are freed in Clear().
         }
     }
 

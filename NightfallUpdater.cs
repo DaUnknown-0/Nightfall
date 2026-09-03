@@ -6,6 +6,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using BepInEx;
@@ -147,22 +148,40 @@ namespace Nightfall {
             _updateProgress = 0f;
 
             // No Among Us TwitchPopup in manager mode; the Mod Manager shows progress/state itself
-            // via GetUpdateState()/GetUpdateProgress().
+            // via GetUpdateState()/GetUpdateProgress(). TwitchManager.Instance or its TwitchPopup
+            // can be null (main menu not fully initialised yet, or a build where the field is
+            // simply not set up) - fall back to working popup-less, same as managerMode, rather
+            // than NRE-ing out of the coroutine and leaving `_busy` stuck true for the session.
             GenericPopup popup = null;
             GameObject button = null;
             if (!managerMode) {
-                popup = Instantiate(TwitchManager.Instance.TwitchPopup);
-                popup.TextAreaTMP.fontSize *= 0.7f;
-                popup.TextAreaTMP.enableAutoSizing = false;
+                var popupTemplate = TwitchManager.Instance != null ? TwitchManager.Instance.TwitchPopup : null;
+                if (popupTemplate != null) {
+                    popup = Instantiate(popupTemplate);
+                    popup.TextAreaTMP.fontSize *= 0.7f;
+                    popup.TextAreaTMP.enableAutoSizing = false;
 
-                popup.Show();
+                    popup.Show();
 
-                button = popup.transform.GetChild(2).gameObject;
-                button.SetActive(false);
-                popup.TextAreaTMP.text = "Updating Nightfall...";
+                    button = popup.transform.GetChild(2).gameObject;
+                    button.SetActive(false);
+                    popup.TextAreaTMP.text = "Updating Nightfall...";
+                }
             }
 
             var asset = release.Assets.Find(FilterPluginAsset);
+            if (asset == null) {
+                NightfallPlugin.Logger?.LogError(
+                    "[Nightfall] Update failed: the release has no Nightfall.dll asset.");
+                _updateState = 3;
+                if (!managerMode && popup != null) {
+                    popup.TextAreaTMP.text = "Update failed - no download found for this release.";
+                    if (button != null) button.SetActive(true);
+                }
+                _busy = false;
+                yield break;
+            }
+
             var www = new UnityWebRequest();
             www.SetMethod(UnityWebRequest.UnityWebRequestMethod.Get);
             www.SetUrl(asset.DownloadUrl);
@@ -171,7 +190,7 @@ namespace Nightfall {
 
             while (!operation.isDone) {
                 _updateProgress = www.downloadProgress;
-                if (!managerMode) {
+                if (!managerMode && popup != null) {
                     int stars = Mathf.CeilToInt(www.downloadProgress * 10);
                     string progress = "Downloading: " + new String((char)0x25A0, stars) + new String((char)0x25A1, 10 - stars);
                     popup.TextAreaTMP.text = progress;
@@ -181,25 +200,53 @@ namespace Nightfall {
 
             if (www.isNetworkError || www.isHttpError) {
                 _updateState = 3;
-                if (!managerMode) {
+                if (!managerMode && popup != null) {
                     popup.TextAreaTMP.text = "Update failed.";
-                    button.SetActive(true);
+                    if (button != null) button.SetActive(true);
                 }
                 _busy = false;
                 yield break;
             }
-            if (!managerMode) {
+            if (!managerMode && popup != null) {
                 popup.TextAreaTMP.text = "Copying files...";
             }
 
             var filePath = Path.Combine(Paths.PluginPath, asset.Name);
 
-            if (File.Exists(filePath + ".old")) File.Delete(filePath + ".old");
-            if (File.Exists(filePath)) File.Move(filePath, filePath + ".old");
+            // Move the working DLL aside before writing the download, so a write failure below can
+            // roll back to it instead of leaving the plugin folder without a usable Nightfall at all.
+            // Guarded in its own try/catch: a locked .old (virus scanner, another process) must not
+            // silently proceed and overwrite the still-working plugin file.
+            var moved = false;
+            try {
+                if (File.Exists(filePath + ".old")) File.Delete(filePath + ".old");
+                if (File.Exists(filePath)) File.Move(filePath, filePath + ".old");
+                moved = true;
+            } catch (Exception e) {
+                NightfallPlugin.Logger?.LogError(
+                    $"[Nightfall] Update failed: could not move the old plugin file aside ({e.Message}).");
+                _updateState = 3;
+                if (!managerMode && popup != null) {
+                    popup.TextAreaTMP.text = "Update failed - the previous version is still installed.";
+                    if (button != null) button.SetActive(true);
+                }
+                _busy = false;
+                yield break;
+            }
 
-            var persistTask = File.WriteAllBytesAsync(filePath, www.downloadHandler.data);
+            // Guarded like the move-aside above: a locked target file, a full disk or a permissions
+            // problem must not throw straight out of the coroutine and leave `_busy` stuck true.
+            Task persistTask = null;
             var hasError = false;
-            while (!persistTask.IsCompleted) {
+            try {
+                persistTask = File.WriteAllBytesAsync(filePath, www.downloadHandler.data);
+            } catch (Exception e) {
+                NightfallPlugin.Logger?.LogError(
+                    $"[Nightfall] Update failed: could not write the downloaded file ({e.Message}).");
+                hasError = true;
+                persistTask = null;
+            }
+            while (persistTask != null && !persistTask.IsCompleted) {
                 if (persistTask.Exception != null) {
                     hasError = true;
                     break;
@@ -207,13 +254,18 @@ namespace Nightfall {
 
                 yield return new WaitForEndOfFrame();
             }
+            // AUDIT-2026-08-15: Task.IsCompleted is also true for Faulted/Canceled, so a task that
+            // already failed by the very first check never enters the loop above and hasError stays
+            // false. Re-check after the loop so a write failure is never reported as a successful
+            // update.
+            if (!hasError && persistTask != null && !persistTask.IsCompletedSuccessfully) hasError = true;
 
             www.downloadHandler.Dispose();
             www.Dispose();
 
             if (!hasError) {
                 _updateState = 2;
-                if (!managerMode) {
+                if (!managerMode && popup != null) {
                     popup.TextAreaTMP.text = "Update installed - restart Among Us to apply it.";
                 }
             } else {
@@ -223,11 +275,15 @@ namespace Nightfall {
                 // stopped loading on the next start, with the only trace being an update popup that
                 // said it had failed. Putting the old file back makes a failed update a no-op again.
                 try {
-                    if (File.Exists(filePath + ".old")) {
+                    if (moved && File.Exists(filePath + ".old")) {
                         if (File.Exists(filePath)) File.Delete(filePath);
                         File.Move(filePath + ".old", filePath);
                         NightfallPlugin.Logger?.LogWarning(
                             "[Nightfall] Update failed - restored the previous plugin file.");
+                    } else if (File.Exists(filePath)) {
+                        // No .old to roll back to - delete the half-written new file rather than
+                        // leave a corrupt/partial DLL in the plugin folder for the next launch.
+                        try { File.Delete(filePath); } catch { }
                     }
                 } catch (Exception e) {
                     NightfallPlugin.Logger?.LogError(
@@ -236,11 +292,11 @@ namespace Nightfall {
                         + $"named \"{PluginAssetName}.old\".");
                 }
                 _updateState = 3;
-                if (!managerMode) {
+                if (!managerMode && popup != null) {
                     popup.TextAreaTMP.text = "Update failed - the previous version is still installed.";
                 }
             }
-            if (!managerMode) button.SetActive(true);
+            if (!managerMode && button != null) button.SetActive(true);
             _busy = false;
         }
 

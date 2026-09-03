@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+### Bug- und Perf-Audit 2026-09-03
+- **Tastenvergabe nach Chat, kritisch** (`NightfallKeys.cs`): Chat-Fokus setzte ALLE verwalteten
+  Hotkeys auf `None`; nach dem Schließen bekamen frisch entstandene TOR-/UC-Rollenbuttons
+  dauerhaft eine Pool-Taste, weil TOR die Originaltasten nur beim Rundenstart wiederherstellt.
+  Die Originalwerte werden jetzt beim Blanken gemerkt und vor der nächsten Vergabe
+  zurückgeschrieben.
+- **Tastenvergabe, Performance** (`NightfallKeys.cs`): Vergabe und Beschriftung liefen bisher
+  jeden Frame; jetzt nur noch bei geänderter Button-Liste, direkt nach Chat-Ende oder alle
+  0,25 s. `Active(button)` (ein Delegat-Aufruf) wird pro Lauf einmal gecacht statt zweimal
+  aufgerufen, und die Feldsuche nach Buttons liest nur noch Felder, die überhaupt einen
+  `CustomButton` halten können, statt jedes statische Feld samt Typinitialisierer fremder
+  Statics.
+- **`NightfallOptions.cs`**: Ohne TOR scannte `TryRegister` jeden Frame alle geladenen
+  Assemblies nach `TheOtherRoles.CustomOption`; nach 120 Versuchen gibt der Scan endgültig auf.
+- **`AvatarCapture.cs`, `WorldRelay.cs`**: Kamera, RenderTexture und Readback-Textur werden
+  gepoolt statt pro Aufnahme neu erzeugt (Größen auf 32 gerundet, 24 Einträge, `RenderTexture.
+  active` wird immer restauriert, auch wenn vorher kein Render-Target aktiv war). Der
+  Szenen-Scan in `WorldRelay.cs` läuft jetzt über `SpriteRenderer` statt über alle Transforms
+  der Szene.
+- **`NightfallUpdater.cs`**: Ein fehlgeschlagener Schreibvorgang wurde als Erfolg gemeldet;
+  jetzt wird `IsCompletedSuccessfully` geprüft, Verschieben und Schreiben laufen in try/catch
+  mit Rollback, und Asset- sowie Popup-Referenzen werden auf `null` geprüft.
+
 ### Performance (Audit 2026-09-01)
 - **Tastenlabels** (`NightfallKeys.cs`): `Pretty(KeyCode)` lief für jeden aktiven Button jeden
   Frame in den Default-Zweig mit bis zu drei `Enum.ToString()`-Aufrufen (Reflection plus neuer

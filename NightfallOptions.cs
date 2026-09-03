@@ -76,6 +76,9 @@ public static class NightfallOptions
     private static object option;              // TheOtherRoles.CustomOption instance
     private static FieldInfo fSelection;
     private static bool tried;
+    /// How many times TryRegister has been called while still waiting for TOR. See the cap in
+    /// TryRegister for why this exists (AUDIT-2026-09-03).
+    private static int attempts;
 
     public static void Bind(ConfigFile config)
     {
@@ -120,6 +123,12 @@ public static class NightfallOptions
     public static void TryRegister()
     {
         if (tried) return;
+
+        // AUDIT-2026-09-03: without TOR, `tried` is never set below and this per-frame driver scans
+        // every loaded assembly for "TheOtherRoles.CustomOption" for the rest of the session. TOR,
+        // if it is going to load at all, is up well before the first HudManager.Update - so past a
+        // generous number of retries it clearly is not coming, and this gives up for good.
+        if (++attempts > 120) { tried = true; return; }
 
         Type customOption = null;
         foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
