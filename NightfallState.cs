@@ -409,6 +409,20 @@ public static class NightfallState
         }
     }
 
+    [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnPlayerLeft))]
+    internal static class PlayerLeftPatch
+    {
+        public static void Postfix([HarmonyArgument(0)] InnerNet.ClientData data)
+        {
+            try
+            {
+                var pc = data?.Character;
+                if (pc != null) NightfallHandshake.Forget(pc.PlayerId);
+            }
+            catch { }
+        }
+    }
+
     /// The round is decided. Reset is not enough on its own: the driver keeps running while the end
     /// screen is up, so the view has to be told to stay down as well - hence the flag, which lives
     /// until the next map is built.
@@ -484,6 +498,10 @@ public static class NightfallHandshake
     }
 
     public static void Receive(byte playerId) => respondents.Add(playerId);
+
+    /// A player who leaves takes his entry with him: PlayerIds are reused in a lobby, and a newcomer
+    /// without the mod who inherited the id counted as having it (reviews 2026-10-02).
+    public static void Forget(byte playerId) => respondents.Remove(playerId);
 
     public static bool EveryoneHasMod()
     {
