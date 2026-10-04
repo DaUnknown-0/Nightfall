@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
         <TargetFramework>net6.0</TargetFramework>
-        <Version>0.3.4.1</Version>
+        <Version>0.3.4.2</Version>
         <Description>Nightfall - a first-person view for Among Us. When Unknown's Collection's Werewolf transforms, every living player drops into a true first-person perspective rendered from the map's own geometry.</Description>
         <Authors>DaUnknown-0</Authors>
         <LangVersion>latest</LangVersion>
@@ -13,6 +13,15 @@
         <AssemblyName>Nightfall</AssemblyName>
         <RootNamespace>Nightfall</RootNamespace>
     </PropertyGroup>
+
+    <!-- Offline-tool-only parts of the core (User 2026-10-04). PolusRooms is used by nothing in the
+         game; the collider-based world inside Core/Scene3D.cs is behind NIGHTFALL_TOOL, which only the
+         render tool defines. The other tool files (TextureBank, FrameRenderer, WallSkin, PropFinder,
+         BakedProps, AtlasTinting) also carry types the game uses (IBillboardSource, ViewParams,
+         PropPiece, SurfaceKind), so they stay in the build. -->
+    <ItemGroup>
+        <Compile Remove="Core\PolusRooms.cs" />
+    </ItemGroup>
 
     <ItemGroup>
         <PackageReference Include="AmongUs.GameLibs.Steam" Version="2024.10.29" />

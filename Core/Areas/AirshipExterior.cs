@@ -47,13 +47,15 @@ public static class AirshipExterior
     public static void Build(AreaBuilder b, float x0, float y0, float x1, float y1)
     {
         float cy = CentreWorld / AreaBuilder.V;              // centre height in AREA units
-        float ry = RyWorld / AreaBuilder.V;
+        float ry = RyWorld / AreaBuilder.V;                  // area units, for the Box-based fins only
 
         /* 28 x 20 rather than the 12 rings a rock gets: the envelope's BLUNT bow goes from a
          * point to half its radius within a twentieth of its length, and at twelve rings that
          * step read as a star of flat spikes when the ship was seen end-on (offline render,
          * 2026-08-30). Facets say "rock"; an airship has to be smooth. 1 120 quads. */
-        b.Envelope(Cx, Cy, cy, Rx, ry, Rz, Skin, 28, 20);
+        // Envelope takes its height radius in WORLD units (it adds it to centreH * V unscaled); the
+        // area-unit ry here made the hull 1.5 times too tall and dipped it under the deck (audit 04.10.).
+        b.Envelope(Cx, Cy, cy, Rx, RyWorld, Rz, Skin, 28, 20);
 
         /*
          * TAIL FINS. The prototype extrudes four trapezoids around the long axis; this kit has no
@@ -80,7 +82,7 @@ public static class AirshipExterior
         foreach (var (nx, ny) in new[] { (-4f, -19.6f), (22f, -19.6f), (-4f, 30.6f), (22f, 30.6f) })
         {
             float nh = ny < 0f ? -6.8f / AreaBuilder.V : -2.8f / AreaBuilder.V;
-            b.Blob(nx, ny, nh, 2.6f, 1.2f / AreaBuilder.V, 1.2f, Nacelle, 8, 5);
+            b.Blob(nx, ny, nh, 2.6f, 1.2f, 1.2f, Nacelle, 8, 5);   // Blob's ry is a world radius too
             // The strut, running from the nacelle's back up into the hull rather than into the air.
             float top = ny < 0f ? -3.0f / AreaBuilder.V : 0.4f / AreaBuilder.V;
             b.Box(new AuRect(nx - 0.2f, ny - 0.2f, nx + 0.2f, ny + 0.2f), nh, top, Dark, false);
@@ -101,7 +103,7 @@ public static class AirshipExterior
         foreach (float x in new[] { -6f, 6f, 18f, 30f })
         {
             // Envelope uses its ry argument as a world height, so the section does too.
-            var (secY, secZ) = AreaBuilder.EnvelopeSection((x - Cx) / Rx, ry, Rz);
+            var (secY, secZ) = AreaBuilder.EnvelopeSection((x - Cx) / Rx, RyWorld, Rz);
             if (secY < 1f) continue;
             foreach (float y in new[] { 29.0f, -13.55f })
             {
@@ -140,13 +142,11 @@ public static class AirshipExterior
             float u = (i % 8 + Rnd()) / 8f - 0.5f;
             float v = (i / 8 + Rnd()) / 8f - 0.5f;
             float x = mx + u * spanX, y = my + v * spanY;
-            // Nothing directly under the ship: a cloud there pokes through the belly.
-            if (MathF.Abs(x - Cx) < Rx * 0.6f && MathF.Abs(y - Cy) < Rz * 0.9f) continue;
             float h = (-24f - Rnd() * 10f) / AreaBuilder.V;
             float r = 4f + Rnd() * 7f;
-            b.Blob(x, y, h, r, r * 0.45f / AreaBuilder.V, r * 0.8f, Cloud, 7, 4);
+            b.Blob(x, y, h, r, r * 0.45f, r * 0.8f, Cloud, 7, 4);
             b.Blob(x + r * 0.7f, y + r * 0.2f, h - 0.4f / AreaBuilder.V, r * 0.6f,
-                   r * 0.34f / AreaBuilder.V, r * 0.5f, Cloud, 6, 3);
+                   r * 0.34f, r * 0.5f, Cloud, 6, 3);
         }
     }
 }

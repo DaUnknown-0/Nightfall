@@ -74,6 +74,9 @@ public struct ViewParams
     public float Ambient;
     /// Everything past this is fog and then nothing.
     public float ViewDistance;
+    /// How far a PERSON (player, pet, body) can be seen at all: the game's own light radius, not the
+    /// torch (User 2026-10-04). 0 = no limit beyond the torch (the offline tool's default).
+    public float PersonRange;
     /// Colour the fog fades into. Outdoors this is the night sky, indoors near black.
     public NfColor FogColor;
 

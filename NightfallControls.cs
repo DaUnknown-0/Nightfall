@@ -75,9 +75,33 @@ public static class NightfallControls
     /// is a state in which nobody is walking anywhere anyway.
     public static bool InputSuspended =>
         MeetingHud.Instance != null || ExileController.Instance != null || Minigame.Instance != null
-        || MapIsOpen || InVent
+        || MapIsOpen || InVent || MenuOpen
         || (HudManager.Instance != null && HudManager.Instance.Chat != null
             && HudManager.Instance.Chat.IsOpenOrOpening);
+
+    /// The game menu (Esc / gear, with TOR's and UC's pages) or a popup is open: the cursor is
+    /// released and the head stops turning behind it (audit 2026-10-04: the mouse stayed captured,
+    /// only Alt freed it). Looked up four times a second: a FindObjectOfType per frame is not free,
+    /// and a quarter second is below what anyone notices when a menu opens.
+    private static bool menuOpenCached;
+    private static float nextMenuScan;
+
+    private static bool MenuOpen
+    {
+        get
+        {
+            if (Time.unscaledTime < nextMenuScan) return menuOpenCached;
+            nextMenuScan = Time.unscaledTime + 0.25f;
+            try
+            {
+                var menu = UnityEngine.Object.FindObjectOfType<OptionsMenuBehaviour>();
+                menuOpenCached = (menu != null && menu.IsOpen)
+                                 || UnityEngine.Object.FindObjectOfType<GenericPopup>() != null;
+            }
+            catch { menuOpenCached = false; }
+            return menuOpenCached;
+        }
+    }
 
     /// Narrower than InputSuspended: WALKING keeps rotating into the (frozen) heading in every one
     /// of the states above except a meeting, an exile, a minigame, the chat, or venting - none of
@@ -212,6 +236,8 @@ public static class NightfallControls
         // Maus nach oben ist in Unity ein POSITIVES "Mouse Y", und nach oben schauen ist ein
         // positiver Pitch - kein Vorzeichenwechsel noetig. Nicht gewrappt, sondern geklemmt:
         // ueber den Zenit hinaus zu schauen gibt es nicht.
+        // Look/InvertY flips it for whoever is used to flight controls (User 2026-10-04).
+        if (NightfallPlugin.InvertY != null && NightfallPlugin.InvertY.Value) dy = -dy;
         Pitch = Mathf.Clamp(Pitch + dy * sens, PitchDown, PitchUp);
 
         // The torch trails the head very slightly. That lag is what the held flashlight leans by on

@@ -78,18 +78,20 @@ public static partial class AreaSurfaces
 
     /// Draws `text` CENTRED on (cx, cy) - the prototype's textAlign 'center' with textBaseline
     /// 'middle' - at cap height `capH`. `maxW`, when greater than zero, is fillText's own maxWidth:
-    /// the whole line is scaled down to fit rather than clipped, which is what keeps
-    /// DECONTAMINATION inside its plate.
+    /// like fillText it squeezes the line HORIZONTALLY to fit and keeps the cap height. Scaling
+    /// both axes (as this did until 04.10.) shrank DECONTAMINATION to a 7 x 10 px smear on its
+    /// strongly stretched plate.
     private static void Stencil(Canvas2D g, string text, float cx, float cy, float capH,
                                 string col, float alpha = 1f, float maxW = 0f)
     {
-        float px = capH / 7f;                       // one stencil pixel
-        float adv = px * 6f;                        // 5 wide plus one of spacing
-        float width = text.Length * adv - px;
+        float px = capH / 7f;                       // one stencil pixel (height)
+        float pw = px;                              // its width, squeezed by maxW
+        float adv = pw * 6f;                        // 5 wide plus one of spacing
+        float width = text.Length * adv - pw;
         if (maxW > 0f && width > maxW)
         {
             float k = maxW / width;
-            px *= k; adv *= k; width = maxW;
+            pw *= k; adv *= k; width = maxW;
         }
         float x0 = cx - width * 0.5f, y0 = cy - px * 3.5f;
         var c = C(col);
@@ -103,7 +105,7 @@ public static partial class AreaSurfaces
                     if (rows[r][q] != '#') continue;
                     // A hair of overlap, so neighbouring pixels of a stroke do not show a seam
                     // where the antialiased edges meet.
-                    g.FillRect(x0 + i * adv + q * px, y0 + r * px, px + 0.5f, px + 0.5f, c, alpha);
+                    g.FillRect(x0 + i * adv + q * pw, y0 + r * px, pw + 0.5f, px + 0.5f, c, alpha);
                 }
         }
     }
@@ -771,7 +773,8 @@ public static partial class AreaSurfaces
         ["mScaFloor"] = new Spec { Unit = 1.3f, Draw = g => {
             Fill(g, "#b8b2a9");
             Grain(g, new[] { "#b4aea6", "#b7b1aa", "#aea89f" }, 700, 0.12f, 371);
-            // a hint of a slab joint every two units, barely visible (the atlas shows none)
+            // a hint of a slab joint at every tile edge (every 1.3 units), barely visible (the atlas
+            // shows none)
             for (float x = 0; x <= g.W; x += g.W) Line(g, x, 0, x, g.H, "#a9a39a", 1, 0.10f);
         } },
 
@@ -883,7 +886,9 @@ public static partial class AreaSurfaces
             }
             for (int i = -1; i <= 2; i++)
                 for (int j = -1; j <= 2; j++)
-                    Hex(i * 64, j * 64 + (System.Math.Abs(i) % 2) * 32, ((i + j) % 3 + 3) % 3 == 0);
+                    // Shade pattern on a period of 2, like the grid itself (two columns, two rows per
+                    // tile); the old period of 3 put a seam at every tile edge (04.10.).
+                    Hex(i * 64, j * 64 + (System.Math.Abs(i) % 2) * 32, ((i % 2 + 2) % 2) == 0 && ((j % 2 + 2) % 2) == 0);
             Grain(g, new[] { "#cbc0aa", "#b5a892" }, 500, 0.10f, 381);
         } },
 
@@ -1522,8 +1527,10 @@ public static partial class AreaSurfaces
             foreach (var pass in new[] { ("#2a3a34", 22f, 0.5f), ("#222d2b", 13f, 1f) })
                 for (int c = -1; c <= 3; c++)
                 {
-                    Line(g, c * p - p, -4, c * p + p, g.H + 4, pass.Item1, pass.Item2, pass.Item3);
-                    Line(g, c * p + p, -4, c * p - p, g.H + 4, pass.Item1, pass.Item2, pass.Item3);
+                    // The overhang goes on BOTH axes, so the diagonals stay exactly 45 degrees and
+                    // the lattice repeats seamlessly (it was 128:136 and jumped ~7 px per tile).
+                    Line(g, c * p - p - 4, -4, c * p + p + 4, g.H + 4, pass.Item1, pass.Item2, pass.Item3);
+                    Line(g, c * p + p + 4, -4, c * p - p - 4, g.H + 4, pass.Item1, pass.Item2, pass.Item3);
                 }
             // the pale felt speckles the drawing scatters over the cells
             Grain(g, new[] { "#4d6e52", "#58795c", "#39543f" }, 700, 0.16f, 451);
@@ -2162,7 +2169,7 @@ public static partial class AreaSurfaces
             float s = g.W / 3f;
             var c = C("#bc9c32");
             for (int i = -1; i < 4; i++)
-                g.FillQuad(i * s, g.H, i * s + s, g.H, i * s + s + g.H, 0, i * s + g.H, 0, c);
+                g.FillQuad(i * s, g.H, i * s + s * 0.5f, g.H, i * s + s * 0.5f + g.H, 0, i * s + g.H, 0, c);   // half-period stripes, so the black shows
             Grain(g, new[] { "#c6a638", "#2a2108" }, 300, 0.12f, 505);
         } },
 
@@ -2370,7 +2377,7 @@ public static partial class AreaSurfaces
             float s = g.W / 3f;
             var c = C("#bc9d32");
             for (int i = -1; i < 4; i++)
-                g.FillQuad(i * s, g.H, i * s + s, g.H, i * s + s + g.H, 0, i * s + g.H, 0, c);
+                g.FillQuad(i * s, g.H, i * s + s * 0.5f, g.H, i * s + s * 0.5f + g.H, 0, i * s + g.H, 0, c);   // half-period stripes, so the black shows
             Grain(g, new[] { "#c6a838", "#26200a" }, 300, 0.12f, 525);
         } },
 
@@ -2409,13 +2416,13 @@ public static partial class AreaSurfaces
         // ============================================================ Cafeteria (mCafe*)
         // surfaces_mira_cafeteria.js.
 
-        // THE FLOOR: wide cream ceramic tiles (0.5 u) with a LIGHTER grout than the field - that
-        // way round here - scattered with small confetti squares. Confetti measured over the open
+        // THE FLOOR: wide cream ceramic tiles (0.5 u) with a grout slightly DARKER than the field
+        // (measured field #ece7df, grout #ddd9d1), scattered with small confetti squares. Confetti measured over the open
         // floor: teal #3db8b8, periwinkle #6688c4, orange #d76a47, yellow #ffdc4f, plus the pale
         // lavender #b9b4e6 off the close-up. Field #ece7df.
         ["mCafeFloor"] = new Spec { Unit = 1.0f, Draw = g => {
             Fill(g, "#d0ccc3");                                             // field, from #ece7df
-            Rect(g, 0, 0, g.W, 3, "#c2beb6");                               // light grout
+            Rect(g, 0, 0, g.W, 3, "#c2beb6");                               // grout, a step darker
             Rect(g, 0, g.H / 2f - 2, g.W, 3, "#c2beb6");
             Rect(g, 0, 0, 3, g.H, "#c2beb6");
             Rect(g, g.W / 2f - 2, 0, 3, g.H, "#c2beb6");

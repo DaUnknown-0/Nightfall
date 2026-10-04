@@ -61,6 +61,34 @@ public static class AvatarCapture
         && Time.time - lastAnyCapture > 0.05f;
 
     private static readonly Dictionary<byte, Entry> entries = new();
+
+    /*
+     * TOR's Morphling and Camouflager change a player's look through Helpers.setLook, which only
+     * re-skins the renderers: CurrentOutfit, the key below, stays the same, and the old photograph
+     * stood until the refresh timer ran out (audit 2026-10-04). A postfix on setLook (patched by
+     * name, Nightfall does not reference TOR) marks that player for a new photograph.
+     */
+    private static readonly HashSet<byte> lookChanged = new();
+
+    public static void TryPatchSetLook(HarmonyLib.Harmony harmony)
+    {
+        try
+        {
+            var helpers = HarmonyLib.AccessTools.TypeByName("TheOtherRoles.Helpers");
+            var m = helpers != null ? HarmonyLib.AccessTools.Method(helpers, "setLook") : null;
+            if (m == null) return;
+            harmony.Patch(m, postfix: new HarmonyLib.HarmonyMethod(typeof(AvatarCapture), nameof(SetLookPostfix)));
+        }
+        catch (Exception ex)
+        {
+            NightfallPlugin.Logger?.LogWarning($"[Nightfall] setLook hook not installed: {ex.Message}");
+        }
+    }
+
+    public static void SetLookPostfix(PlayerControl target)
+    {
+        try { if (target != null) lookChanged.Add(target.PlayerId); } catch { }
+    }
     /// Pets are photographed separately, under the same player id. See ForPet.
     private static readonly Dictionary<byte, Entry> petEntries = new();
 
@@ -205,13 +233,13 @@ public static class AvatarCapture
         }
 
         bool stale = Time.time - e.CapturedAt > RefreshSeconds;
-        bool changed = e.ColorId != ColorIdOf(p) || e.Cosmetics != CosmeticsKeyOf(p);
+        bool changed = e.ColorId != ColorIdOf(p) || e.Cosmetics != CosmeticsKeyOf(p) || lookChanged.Contains(p.PlayerId);
 
         // Only one capture per frame across all players: the readback stalls the render thread and
         // fifteen of them in a row on the frame a werewolf transforms would be felt as a hitch.
         if (Due(e, stale, changed))
         {
-            if (CaptureInto(p, e, false)) lastAnyCapture = Time.time;
+            if (CaptureInto(p, e, false)) { lastAnyCapture = Time.time; lookChanged.Remove(p.PlayerId); }
         }
 
         return e.Sprite.IsValid ? e.Sprite : null;
@@ -350,6 +378,9 @@ public static class AvatarCapture
             {
                 if (r == null || !r.enabled) continue;
                 if (r.sprite == null) continue;
+                // An inactive layer still reports enabled and a sprite, and its bounds blew the frame
+                // up to the 4 x 4 clamp (audit 04.10.).
+                if (!r.gameObject.activeInHierarchy) continue;
                 if (!petOnly && petGo != null && r.transform.IsChildOf(petGo.transform)) continue;
                 mine.Add(r);
             }
@@ -428,6 +459,17 @@ public static class AvatarCapture
             readback.ReadPixels(new Rect(0, 0, texW, texH), 0, 0, false);
             readback.Apply(false);
 
+            // The photograph always faces RIGHT (audit 04.10.): it is taken as the player stands, so
+            // one walking left came out mirrored and the renderer's frame choice, which assumes a
+            // right-facing photo, turned him the wrong way. A left-facing shot is mirrored here.
+            bool facesLeft = false;
+            try
+            {
+                if (petOnly) facesLeft = mine.Count > 0 && mine[0].flipX;
+                else facesLeft = p.cosmetics.currentBodySprite.BodySprite.flipX;
+            }
+            catch { }
+
             var src = readback.GetPixels32();
             var rgba = GetRgbaScratch(texW * texH * 4);
             // A rendered texture starts at the bottom row, the renderer's billboards start at the
@@ -438,7 +480,7 @@ public static class AvatarCapture
                 int dstRow = y * texW;
                 for (int x = 0; x < texW; x++)
                 {
-                    var c = src[srcRow + x];
+                    var c = src[srcRow + (facesLeft ? texW - 1 - x : x)];
                     int o = (dstRow + x) * 4;
                     rgba[o] = c.r;
                     rgba[o + 1] = c.g;

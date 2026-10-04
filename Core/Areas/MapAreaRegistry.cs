@@ -11,8 +11,8 @@ namespace Nightfall.Core;
 /// Scene3D, NightfallState and the offline render tool all need the same two answers - "is this map
 /// described" and "then build it" - and until now all three asked PolusAreas directly, which meant a
 /// second described map would have to touch every one of them. This is the one seam: a caller matches
-/// a map key against this registry instead of a hard-coded class name, and the registry currently
-/// holds exactly one entry.
+/// a map key against this registry instead of a hard-coded class name. It holds five maps today:
+/// Polus, Mira HQ, the Airship, the Fungle and the Skeld.
 ///
 /// THE ENTRY IS HARD-CODED HERE RATHER THAN SELF-REGISTERED.
 ///
@@ -21,8 +21,9 @@ namespace Nightfall.Core;
 /// any more, now that Scene3D, NightfallState and the render tool go through the registry instead.
 /// Relying on "PolusAreas registers itself" would mean it only happens if some unrelated code path
 /// references the type first, and under IL2CPP/BepInEx's own loading order that is not a guarantee
-/// worth building on. Three maps do not need a general self-registration mechanism; they need this
-/// list to be right, so it is written by hand, here.
+/// worth building on. A handful of maps do not need a general self-registration mechanism; they need
+/// this list to be right, so it is written by hand, here. (A Register() method for third parties and
+/// PolusAreas.AppliesTo were never called and were removed on 2026-10-04.)
 public static class MapAreaRegistry
 {
     private sealed class Entry
@@ -72,13 +73,13 @@ public static class MapAreaRegistry
         {
             KeyFragment = "fungle",
             Build = FungleAreas.Build,
-            // Deliberately no BuildExterior YET, and this is the one entry where that is a
-            // shortcut rather than a decision. The Fungle is an island: unlike the Skeld it has
-            // real outdoor ground between its rooms, and unlike Polus that ground is not a flat
-            // plain that BuildPlanet could lay down - it rises through four measured levels
-            // (Jungle 0, Highland 4.5884, Ledge 6.4746, Kuppe 8.1244). Until that terrain is
-            // described, the areas carry their own ground and everything between them is honestly
-            // empty. See section 7 of _work/KONZEPT_AIRSHIP_FUNGLE.md.
+            // No BuildExterior: the Fungle's outdoor ground is not a flat plain BuildPlanet could
+            // lay down, it rises through four measured levels (Jungle 0, Highland 4.5884, Ledge
+            // 6.4746, Kuppe 8.1244), and it is now described as an area of its own
+            // ("fungleterrain" in FungleAreas.g.cs). What is still missing is the jungle layer on
+            // top of it (mushrooms, plants, spike groups), the zipline rope and the dropship
+            // hull; the exporter drops those kinds because AreaKit has no builder for them yet.
+            // See section 7 of _work/KONZEPT_AIRSHIP_FUNGLE.md.
         },
         new Entry
         {
@@ -91,20 +92,8 @@ public static class MapAreaRegistry
         },
     };
 
-    /// Adds a map to the registry. `keyFragment` is matched the same way Polus always has been -
-    /// a case-insensitive substring of the map key. `buildExterior` may be left null for a map with
-    /// no outside world to build.
-    public static void Register(string keyFragment, Func<Area[]> build,
-        Action<AreaBuilder, float, float, float, float> buildExterior = null)
-    {
-        entries.Add(new Entry
-        {
-            KeyFragment = keyFragment,
-            Build = build,
-            BuildExterior = buildExterior,
-        });
-    }
-
+    /// A case-insensitive substring of the map key (the ship prefab's name, "PolusShip(Clone)" and
+    /// friends). The fragments are distinct enough for the five vanilla ships; the first match wins.
     private static Entry Find(string mapKey)
     {
         if (mapKey == null) return null;

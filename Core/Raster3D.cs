@@ -755,6 +755,9 @@ float hor = HorizonY(v, f);
         // a figure in the beam is a smudge anyway, and letting it fade there rather than at the
         // rasteriser's view distance keeps the far end of a corridor honestly empty.
         float reach = v.FlashlightRange * 2f;
+        // Never past the game's own light radius (PersonRange): the torch may light walls further,
+        // a person stays exactly as hidden as in the top-down view (User 2026-10-04).
+        if (v.PersonRange > 0f) reach = MathF.Min(reach, v.PersonRange);
         float far = NfMath.SmoothStep(reach, reach * 0.7f, dist);
 
         float seen = angle * far * v.FlashlightPower;
@@ -790,6 +793,8 @@ float hor = HorizonY(v, f);
             float zf = dx * cy + dz * sy;
             float xr = dx * sy - dz * cy;
             if (zf <= 0.08f || zf > v.ViewDistance) continue;
+            // A person beyond the game's light radius is not drawn at all (glowing markers excepted).
+            if (v.PersonRange > 0f && bb.Glow <= 0f && zf > v.PersonRange) continue;
 
             float iz = 1f / zf;
             float cxs = (xr * f / aspect) * iz * 0.5f * Width + Width * 0.5f;
@@ -809,13 +814,21 @@ float hor = HorizonY(v, f);
             // Chest height, not the feet: the torch is carried at hip height and a figure lit only
             // where the beam meets the floor is a pair of boots.
             var lookAt = new NfVec3(bb.Position.X, bb.Base + bb.Height * 0.55f, bb.Position.Y);
-            float lit = Light(v, lookAt,
-                              new NfVec3(-dx / MathF.Max(0.001f, dist), 0f, -dz / MathF.Max(0.001f, dist)));
-            if (bb.Glow > 0f) lit = MathF.Max(lit, bb.Glow);
+            // The same two-coloured light as the walls (audit 2026-10-04): cold ambient, warm beam.
+            // A figure lit by the neutral sum stood grey and white against a warm-lit wall.
+            Light2(v, lookAt, new NfVec3(-dx / MathF.Max(0.001f, dist), 0f, -dz / MathF.Max(0.001f, dist)),
+                   out float bbAmb, out float bbBeam);
+            float lit = bbAmb + bbBeam;
+            var litCol = new NfColor(bbAmb * AmbientTint.R + bbBeam * BeamTint.R,
+                                     bbAmb * AmbientTint.G + bbBeam * BeamTint.G,
+                                     bbAmb * AmbientTint.B + bbBeam * BeamTint.B);
+            if (lit > 1.45f) { litCol = litCol * (1.45f / lit); lit = 1.45f; }   // Light()'s own ceiling
+            else if (lit < 0f) { litCol = default; lit = 0f; }
+            if (bb.Glow > 0f && bb.Glow > lit) { lit = bb.Glow; litCol = new NfColor(lit, lit, lit); }
             // Prey runs warm. In predator vision a living figure is lifted to full brightness,
             // so the red tint afterwards maps it to the hot end of the ramp: a heat signature
             // against the cold room, which is what a hunting sense is for.
-            if (v.PredatorVision && bb.Glow <= 0f) lit = MathF.Max(lit, 1.12f);
+            if (v.PredatorVision && bb.Glow <= 0f && lit < 1.12f) { lit = 1.12f; litCol = new NfColor(lit, lit, lit); }
 
             // Seen at all? See the note above ConeOn. Markers are exempt: they are game
             // information, not people, and a hint that vanishes outside the beam is no hint.
@@ -846,12 +859,12 @@ float hor = HorizonY(v, f);
                     var col = texel;
                     if (mask > 0f) col = NfColor.Lerp(col, bb.Color, mask);
                     if (shadow > 0f) col = NfColor.Lerp(col, bb.ShadowColor, shadow);
-                    col = Fog(col * lit, zf, v);
+                    col = Fog(new NfColor(col.R * litCol.R, col.G * litCol.G, col.B * litCol.B), zf, v);
 
                     if (alpha < 0.995f)
                     {
                         int o = di * 4;
-                        var dst = new NfColor(Pixels[o] / 255f, Pixels[o + 1] / 255f, Pixels[o + 2] / 255f);
+                        var dst = NfColor.FromPixel(Pixels, o);   // undo the tone curve before mixing
                         col = NfColor.Lerp(dst, col, alpha);
                         // Depth only once the figure is solid enough to hide what is behind it.
                         // A half-faded shape that writes depth punches a hole in the wall it is

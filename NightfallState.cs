@@ -28,7 +28,9 @@
  * The effect is client-side and cannot be forced on anyone: a player without the mod simply keeps
  * the normal view, and with it a real advantage. So the feature gates on a handshake - every client
  * announces itself, and the view only arms when the whole lobby has answered - with a host switch
- * to turn the requirement off for testing. The host is warned in chat when someone is missing.
+ * to turn the requirement off for testing. The host is told in chat (once per round, only when the
+ * view would be wanted: "Always", or a Werewolf in the round) who is missing, and once per map when
+ * the map has no described world (2026-10-04; it used to be a log line only).
  */
 
 using System;
@@ -76,6 +78,7 @@ public static class NightfallState
             fActive = ucWerewolf.GetField("active", f);
             fWolfForm = ucWerewolf.GetField("wolfForm", f);
             fWerewolf = ucWerewolf.GetField("werewolf", f);
+            fHowlNight = ucWerewolf.GetField("howlNight", f);
 
             NightfallPlugin.Logger?.LogInfo(
                 $"[Nightfall] Unknown's Collection found. Werewolf hooks: "
@@ -87,7 +90,20 @@ public static class NightfallState
         }
     }
 
-    /// True while UC's werewolf is transformed. Everything about the trigger reduces to this.
+    private static System.Reflection.FieldInfo fHowlNight;
+
+    /// True during UC's NIGHT: the transformed wolf, or the howl night in which he stays human but
+    /// the crew is on torches all the same (User 2026-10-04: the howl night did not start the view).
+    /// The trigger asks this; the beast's own picture (claws, predator vision, the wolf billboard)
+    /// keeps asking WolfFormActive, because in the howl night there is no beast to show.
+    public static bool NightActive()
+    {
+        if (WolfFormActive()) return true;
+        try { return fActive != null && fHowlNight != null && (bool)fActive.GetValue(null) && (bool)fHowlNight.GetValue(null); }
+        catch { return false; }
+    }
+
+    /// True while UC's werewolf is transformed.
     public static bool WolfFormActive()
     {
         ProbeUc();
@@ -96,6 +112,34 @@ public static class NightfallState
             if (fActive == null || fWolfForm == null) return false;
             return (bool)fActive.GetValue(null) && (bool)fWolfForm.GetValue(null);
         }
+        catch { return false; }
+    }
+
+    /// Would the first-person view be used this round at all? "Always", or a Werewolf in play.
+    internal static bool ViewWantedThisRound()
+    {
+        try { return NightfallOptions.Current == NightfallOptions.Mode.Always || WerewolfInRound(); }
+        catch { return false; }
+    }
+
+    /// One line in the HOST's own chat (nobody else sees it).
+    internal static void HostChat(string text)
+    {
+        try
+        {
+            if (AmongUsClient.Instance == null || !AmongUsClient.Instance.AmHost) return;
+            var hud = HudManager.Instance;
+            if (hud == null || hud.Chat == null || PlayerControl.LocalPlayer == null) return;
+            hud.Chat.AddChat(PlayerControl.LocalPlayer, text);
+        }
+        catch { }
+    }
+
+    /// True while UC has a werewolf in this round (transformed or not).
+    public static bool WerewolfInRound()
+    {
+        ProbeUc();
+        try { return fActive != null && (bool)fActive.GetValue(null); }
         catch { return false; }
     }
 
@@ -135,8 +179,9 @@ public static class NightfallState
     /*
      * WHICH MAPS THIS FEATURE EXISTS ON.
      *
-     * Only Polus has a described world (`PolusAreas`, 17 areas measured by hand). The other four
-     * still go through the old collider path, and that path was never good enough to play in: a
+     * The five vanilla maps (Polus, Mira HQ, the Airship, the Fungle, the Skeld) have a described
+     * world, listed in Core.MapAreaRegistry. Anything else (Submerged, custom maps) would go through
+     * the old collider path, and that path was never good enough to play in: a
      * collider is not a wall, it runs into every door niche and out again, it has no window, sill
      * or lintel, and the props are photographs of a top-down drawing stood on end. It renders, and
      * that is exactly the problem - "it renders" reads to a player as "this is what the mod is",
@@ -160,8 +205,9 @@ public static class NightfallState
                 lastLoggedMap = model.MapKey;
                 NightfallPlugin.Logger?.LogInfo(
                     $"[Nightfall] '{model.MapKey}' has no described world - the first-person view "
-                    + "stays off on this map. Polus, Mira HQ and the Skeld are built; see "
-                    + "MapAreaRegistry.AppliesTo.");
+                    + "stays off on this map (only the maps listed in MapAreaRegistry have a built world).");
+                if (ViewWantedThisRound())
+                    HostChat("Nightfall: this map has no first-person world yet - the view stays off here.");
             }
             return ok;
         }
@@ -234,25 +280,74 @@ public static class NightfallState
             return true;
         }
 
-        return WolfFormActive();
+        return NightActive();
+    }
+
+    // Activate() can fail quietly (no geometry yet, a missing camera). wasOn used to latch true
+    // anyway, so the view never came up for the rest of the round (audit 2026-10-04): now it only
+    // latches on success, and a failure is retried with a backoff.
+    private static float nextActivateTry;
+    private static int activateFailures;
+    private const int MaxActivateTries = 5;
+
+    /*
+     * PREBUILD. The 3D world takes 0.4 to 2 s to build on the main thread. Built lazily it froze the
+     * game exactly at the transformation (WerewolfOnly) or the first frame after the intro (Always).
+     * Built here instead, at a moment nobody is moving: during the intro cutscene in "Always", and in
+     * "Werewolf Only" as soon as UC reports a werewolf in this round (that is set when the intro
+     * ends; the wolf needs a charged blackout before he can turn, so there is time). Rounds without
+     * a werewolf never pay for the world, which matters on a 32-bit process.
+     */
+    private static float nextPrebuildCheck;
+    private static void PrebuildTick()
+    {
+        if (NightfallView.HasScene || Time.time < nextPrebuildCheck) return;
+        nextPrebuildCheck = Time.time + 0.5f;
+        try
+        {
+            if (ShipStatus.Instance == null || !MapIsDescribed()) return;
+            if (NightfallPlugin.Enabled != null && !NightfallPlugin.Enabled.Value) return;
+            var mode = NightfallOptions.Current;
+            if (mode == NightfallOptions.Mode.Never || !NightfallHandshake.EveryoneHasMod()) return;
+            bool need = mode == NightfallOptions.Mode.Always
+                ? IntroCutscene.Instance != null || AmongUsClient.Instance == null
+                  || AmongUsClient.Instance.GameState == InnerNet.InnerNetClient.GameStates.Started
+                : WerewolfInRound() && !NightActive();
+            if (need) NightfallView.Prebuild();
+        }
+        catch (Exception e) { NightfallPlugin.Logger?.LogWarning($"[Nightfall] prebuild check failed: {e.Message}"); }
     }
 
     public static void Tick()
     {
+        PrebuildTick();
         bool want = ShouldBeOn();
 
         if (want && !wasOn)
         {
-            transitionStart = Time.time;
-            NightfallControls.Reset();
-            NightfallView.Activate();
+            if (activateFailures < MaxActivateTries && Time.time >= nextActivateTry)
+            {
+                transitionStart = Time.time;
+                NightfallControls.Reset();
+                NightfallView.Activate();
+                if (NightfallView.IsActive) { wasOn = true; activateFailures = 0; }
+                else
+                {
+                    activateFailures++;
+                    nextActivateTry = Time.time + 2f;
+                    NightfallPlugin.Logger?.LogWarning(activateFailures < MaxActivateTries
+                        ? $"[Nightfall] view did not come up (try {activateFailures}), retrying in 2 s."
+                        : "[Nightfall] view did not come up after 5 tries - staying in the top-down view this round.");
+                }
+            }
         }
         else if (!want && wasOn)
         {
             NightfallView.Deactivate();
             transitionStart = -1f;
+            wasOn = false;
         }
-        wasOn = want;
+        if (!want) { activateFailures = 0; nextActivateTry = 0f; }
 
         if (!NightfallView.IsActive) return;
 
@@ -275,7 +370,14 @@ public static class NightfallState
         v.FlashlightDir = NightfallControls.TorchDir;
         v.Time = Time.time;
 
-        v.Fov = (NightfallPlugin.FieldOfView?.Value ?? 75f) * NfMath.Pi / 180f;
+        // The setting is horizontal; Raster3D's Fov is the vertical angle. Convert with the screen's
+        // aspect ratio (the render keeps it), clamped so the cell culling stays in its valid range.
+        {
+            float hFov = Mathf.Clamp(NightfallPlugin.FieldOfView?.Value ?? 105f, 60f, 110f) * NfMath.Pi / 180f;
+            float aspect = Screen.height > 0 ? Screen.width / (float)Screen.height : 16f / 9f;
+            if (aspect < 1f) aspect = 1f;
+            v.Fov = 2f * MathF.Atan(MathF.Tan(hFov * 0.5f) / aspect);
+        }
         // LocalIsWerewolf() alone is the ROLE, not the HUNT: in "Always" mode the first-person view
         // is on the whole round, including for a werewolf who has not transformed yet, and without
         // the wolfForm check that player would see the beast's claws and night vision the entire
@@ -313,6 +415,10 @@ public static class NightfallState
         // Past a little over twice the radius everything is fog, so the model can never be used to
         // read a room the game has already taken away.
         v.ViewDistance = Mathf.Clamp(radius * 2.6f * scale, 4f, 40f);
+        // PEOPLE are bound to the light radius itself (User 2026-10-04): the torch and the fog above
+        // run further so walls and rooms stay readable, but a player or a body is visible no further
+        // than the top-down view shows it, whatever the local TorchRange says (scale is not applied).
+        v.PersonRange = radius * 1.1f;
 
         // EVERY ROLE WITH BOOSTED VISION GETS A VISIBLY STRONGER LAMP, NOT JUST A LONGER ONE.
         //
@@ -365,6 +471,8 @@ public static class NightfallState
             NightfallView.Reset();
             ManualOverride = false;
             wasOn = false;
+            activateFailures = 0;
+            nextActivateTry = 0f;
             roundOver = false;          // a new map is a new round
             if (ship == null) return;
 
@@ -464,8 +572,8 @@ public static class NightfallState
 /// </summary>
 public static class NightfallHandshake
 {
-    /// Own channel. Free per the project's ID registry (211-229, 231-239, 241-243 unused; TOR
-    /// stays below 200, Unknown's Collection owns 230, Useful TOR Stuff owns 240).
+    /// Own channel (callId). TOR stays below 200, Unknown's Collection owns 230, Useful TOR Stuff
+    /// 240, Unknown's Atlas 236/237; ID-Registry.md is the authority for what else is taken.
     public const byte CallId = 231;
 
     private static readonly HashSet<byte> respondents = new();
@@ -485,6 +593,9 @@ public static class NightfallHandshake
         {
             var me = PlayerControl.LocalPlayer;
             if (me == null || AmongUsClient.Instance == null) return;
+            // A player who switched the view off keeps the top-down overview: he counts as one
+            // without the mod, and the view stays off for everyone (audit 2026-10-04).
+            if (NightfallPlugin.Enabled != null && !NightfallPlugin.Enabled.Value) return;
             var w = AmongUsClient.Instance.StartRpcImmediately(
                 me.NetId, CallId, SendOption.Reliable, -1);
             w.Write(me.PlayerId);
@@ -543,12 +654,14 @@ public static class NightfallHandshake
                 if (p == null || p.Data == null || p.Data.Disconnected) continue;
                 if (!respondents.Contains(p.PlayerId)) missing.Add(p.Data.PlayerName);
             }
-            if (missing.Count == 0 || respondents.Count <= 1) return;
+            if (missing.Count == 0) return;
+            if (!NightfallState.ViewWantedThisRound()) return;
 
             warned = true;
             NightfallPlugin.Logger?.LogWarning(
                 $"[Nightfall] Not everyone has the mod - first person stays off. Missing: "
                 + string.Join(", ", missing));
+            NightfallState.HostChat($"Nightfall: the first-person view stays off this round - not active for {string.Join(", ", missing)}.");
         }
         catch { }
     }

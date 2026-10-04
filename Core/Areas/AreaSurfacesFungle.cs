@@ -253,11 +253,11 @@ public static partial class AreaSurfaces
         // von #858c8b
         for (float y = 0f; y < g.H; y += 26f)
         {
-        Line(g, 0f, y, g.W, y, "#687070", 2f, 1f);
+        Line(g, 0f, y, g.W, y, "#687070", 2f, 0.5f);
         }
         for (float x = 0f; x < g.W; x += 34f)
         {
-        Line(g, x, 0f, x, g.H, "#687070", 2f, 1f);
+        Line(g, x, 0f, x, g.H, "#687070", 2f, 0.5f);
         }
         Line(g, 0f, 1f, g.W, 1f, "#8b9291", 2f, 1f);
         Grain(g, new[] { "#838a89", "#6a7271" }, 450, 0.11f, 2004);
@@ -268,7 +268,7 @@ public static partial class AreaSurfaces
         Line(g, g.W / 2f, 0f, g.W / 2f, g.H, "#9c7440", 3f, 1f);
         for (float x = 6f; x < g.W; x += 22f)
         {
-        Line(g, x, 0f, x, g.H, "#ad8147", 2f, 1f);
+        Line(g, x, 0f, x, g.H, "#ad8147", 2f, 0.4f);
         }
         Grain(g, new[] { "#cfa05b", "#a87c44" }, 350, 0.10f, 5);
         } },
@@ -299,11 +299,11 @@ public static partial class AreaSurfaces
         Rect(g, g.W * 0.72f, g.H * 0.42f, g.W * 0.10f, g.H * 0.16f, "#5f6864", 1f);
         Grain(g, new[] { "#95a09b", "#7e8783" }, 300, 0.10f, 3104);
         } },
-        ["funCommsBulb"] = new Spec { Unit = 0.5f, Draw = g => {
+        ["funCommsBulb"] = new Spec { Unit = 0.5f, Emissive = 1.1f, Draw = g => {
         Fill(g, "#f4e7c2");
         for (float y = 3f; y < g.H; y += 9f)
         {
-        Line(g, 0f, y, g.W, y, "#e4d2a4", 2f, 1f);
+        Line(g, 0f, y, g.W, y, "#e4d2a4", 2f, 0.5f);
         }
         Grain(g, new[] { "#faf0d4", "#e2d0a2" }, 200, 0.08f, 5613);
         } },
@@ -312,7 +312,7 @@ public static partial class AreaSurfaces
         // von #74533d
         for (float y = 5f; y < g.H; y += 12f)
         {
-        Line(g, 0f, y, g.W, y, "#553d2c", 2f, 1f);
+        Line(g, 0f, y, g.W, y, "#553d2c", 2f, 0.45f);
         }
         Line(g, 0f, 1f, g.W, 1f, "#7a5a42", 2f, 1f);
         Grain(g, new[] { "#71523c", "#5b4230" }, 350, 0.11f, 1735);
@@ -342,7 +342,7 @@ public static partial class AreaSurfaces
         }
         Grain(g, new[] { "#d0a05c", "#a67a40" }, 450, 0.12f, 7503);
         } },
-        ["funCommsCrystal"] = new Spec { Unit = 0.6f, Draw = g => {
+        ["funCommsCrystal"] = new Spec { Unit = 0.6f, Emissive = 0.4f, Draw = g => {
         var rnd = new Rng(6762);
         Fill(g, "#8d4670");
         // von #9c4d75
@@ -435,7 +435,7 @@ public static partial class AreaSurfaces
         Fill(g, "#6b3f24");
         Grain(g, new[] { "#59331c", "#7d4c2c", "#4c2b17" }, 500, 0.2f, 3620);
         } },
-        ["funDropshipEmber"] = new Spec { Unit = 0.5f, Draw = g => {
+        ["funDropshipEmber"] = new Spec { Unit = 0.5f, Emissive = 0.85f, Draw = g => {
         var rnd = new Rng(6927);
         Fill(g, "#c84a12");
         Grain(g, new[] { "#ff9a30", "#e86a1a", "#ffd24a" }, 350, 0.5f, 6927);
@@ -444,7 +444,7 @@ public static partial class AreaSurfaces
             Rect(g, rnd.Next() * g.W, rnd.Next() * g.H, 2f + rnd.Next() * 3f, 2f + rnd.Next() * 2f, "#ffe9a0", 1f);
         }
         } },
-        ["funDropshipFlame"] = new Spec { Unit = 0.5f, Draw = g => {
+        ["funDropshipFlame"] = new Spec { Unit = 0.5f, Emissive = 1.0f, Draw = g => {
         Fill(g, "#ffb43a");
         Grain(g, new[] { "#ffe08a", "#ff9a28", "#fff3c8" }, 260, 0.55f, 3136);
         } },
@@ -488,7 +488,7 @@ public static partial class AreaSurfaces
         // querlaufende Planken: Fugen senkrecht im Bild (= Nord-Sued auf dem Steg)
         for (float x = 0f; x < g.W; x += g.W / 3.2f)
         {
-        Line(g, x, 0f, x, g.H, "#48606b", 2f, 1f);
+        Line(g, x, 0f, x, g.H, "#48606b", 2f, 0.55f);
         }
         // versetzte Längsstoesse der drei Plankenreihen
         Rect(g, g.W / 3.2f, g.H * 0.33f, g.W / 3.2f, 2f, "#557079", 1f);
@@ -501,7 +501,7 @@ public static partial class AreaSurfaces
         Fill(g, "#202227");
         for (float y = 0f; y < g.H; y += 24f)
         {
-        Line(g, 0f, y, g.W, y, "#181a1f", 1f, 1f);
+        Line(g, 0f, y, g.W, y, "#181a1f", 1f, 0.5f);
         }
         Line(g, 0f, 2f, g.W, 2f, "#33363e", 1f, 1f);
         Grain(g, new[] { "#26282e", "#191b20" }, 300, 0.10f, 372);
@@ -519,7 +519,7 @@ public static partial class AreaSurfaces
         Fill(g, "#31353f");
         for (float x = 3f; x < g.W; x += 10f)
         {
-        Line(g, x, 0f, x, g.H, "#272b34", 1f, 1f);
+        Line(g, x, 0f, x, g.H, "#272b34", 1f, 0.4f);
         }
         Line(g, 1f, 0f, 1f, g.H, "#3d434f", 1f, 1f);
         Grain(g, new[] { "#383d49", "#2a2e38" }, 240, 0.09f, 1547);
@@ -528,7 +528,7 @@ public static partial class AreaSurfaces
         Fill(g, "#79848a");
         for (float x = 4f; x < g.W; x += 12f)
         {
-        Line(g, x, g.H * 0.30f, x, g.H * 0.72f, "#626d73", 2f, 1f);
+        Line(g, x, g.H * 0.30f, x, g.H * 0.72f, "#626d73", 2f, 0.45f);
         }
         Line(g, 0f, 2f, g.W, 2f, "#8d989e", 1f, 1f);
         Rect(g, 0f, g.H * 0.84f, g.W, g.H * 0.16f, "#57626a", 1f);
@@ -571,18 +571,21 @@ public static partial class AreaSurfaces
         // from #5b320f at (9.00,-11.10)
         Grain(g, new[] { "#5a3413", "#3a1e08", "#6b4520" }, 700, 0.22f, 634);
         } },
+        // OPAQUE GLASS. The prototype's pane is transparent (opacity 0.38); this rasteriser has no
+        // blending, so like Mira's and Polus' panes it is painted as a dark, solid pane instead of
+        // the measured light tone, which read as pale plaster walls and a plaster lid (04.10.).
         ["funGreenhouseGlass"] = new Spec { Unit = 1.4f, Detail = 1, Draw = g => {
-        Fill(g, "#9fc0be");
-        // from #bed0cf at (9.00,-9.50)
-        Line(g, 0f, 1f, g.W, 1f, "#c2dedc", 2f, 0.5f);
+        Fill(g, "#2f4b4a");
+        // measured #bed0cf at (9.00,-9.50) is glass with the room behind it; darkened, see above
+        Line(g, 0f, 1f, g.W, 1f, "#6c908d", 2f, 0.5f);
         // der helle Scheibenrand oben
-        Line(g, 0f, g.H - 2f, g.W, g.H - 2f, "#7fa5a3", 2f, 0.5f);
+        Line(g, 0f, g.H - 2f, g.W, g.H - 2f, "#1f3534", 2f, 0.5f);
         for (float x = 10f; x < g.W; x += 24f)
         {
-        Line(g, x, 0f, x, g.H, "#b0ccca", 1f, 1f);
+        Line(g, x, 0f, x, g.H, "#4c6b69", 1f, 0.25f);
         }
         // Scheibenfugen
-        Grain(g, new[] { "#aac9c7", "#90b2b0" }, 200, 0.08f, 2788);
+        Grain(g, new[] { "#3a5856", "#263f3e" }, 200, 0.08f, 2788);
         } },
         ["funGreenhouseFrame"] = new Spec { Unit = 0.5f, Draw = g => {
         Fill(g, "#100b10");
@@ -629,7 +632,7 @@ public static partial class AreaSurfaces
         // geschaetzt nach funGreenhouseFels-Werten
         for (float y = 4f; y < g.H; y += 9f)
         {
-        Line(g, 0f, y, g.W, y, "#33202c", 2f, 1f);
+        Line(g, 0f, y, g.W, y, "#33202c", 2f, 0.5f);
         }
         // Sprossenfugen
         Line(g, 0f, 1f, g.W, 1f, "#4a3342", 2f, 1f);
@@ -643,7 +646,7 @@ public static partial class AreaSurfaces
         // geschaetzt (Holzton, from #271712 aufgehellt)
         for (float y = 5f; y < g.H; y += 12f)
         {
-        Line(g, 0f, y, g.W, y, "#46301a", 2f, 1f);
+        Line(g, 0f, y, g.W, y, "#46301a", 2f, 0.5f);
         }
         // Brettfugen
         Line(g, 0f, 1f, g.W, 1f, "#6f5030", 2f, 1f);
@@ -655,14 +658,14 @@ public static partial class AreaSurfaces
         // from #f8c43f at (-9.79,1.64)
         for (float x = 6f; x < g.W; x += 14f)
         {
-        Line(g, x, 0f, x, g.H, "#b8882a", 2f, 1f);
+        Line(g, x, 0f, x, g.H, "#b8882a", 2f, 0.4f);
         }
         // Sprossenstreifen
         Line(g, 0f, 1f, g.W, 1f, "#ecc254", 2f, 1f);
         // helle Kante
         Grain(g, new[] { "#e0b53c", "#c49a2e" }, 250, 0.12f, 7540);
         } },
-        ["funGreenhouseCrystal"] = new Spec { Unit = 0.8f, Detail = 1, Draw = g => {
+        ["funGreenhouseCrystal"] = new Spec { Unit = 0.8f, Emissive = 0.55f, Detail = 1, Draw = g => {
         var rnd = new Rng(9653);
         Fill(g, "#6a3648");
         // from #7d4058 at (9.20,-8.80)
@@ -694,7 +697,7 @@ public static partial class AreaSurfaces
         Fill(g, "#a88c97");
         Grain(g, new[] { "#a88c97" }, 400, 0.06f, 5762);
         } },
-        ["funGreenhouseGlowCap"] = new Spec { Unit = 0.5f, Draw = g => {
+        ["funGreenhouseGlowCap"] = new Spec { Unit = 0.5f, Emissive = 1.0f, Draw = g => {
         // PORT: nicht vollstaendig uebersetzbar, auf die Grundfarbe reduziert.
         // Von Hand nachzubauen sind:
         //   grd.addColorStop(0, '#25626b')
@@ -731,7 +734,7 @@ public static partial class AreaSurfaces
         Line(g, 0f, g.H - 2f, g.W, g.H - 2f, "#221d2a", 2f, 1f);
         Grain(g, new[] { "#332c3c", "#262030" }, 350, 0.12f, 3927);
         } },
-        ["funGreenhouseMonitor"] = new Spec { Unit = 0.7f, Draw = g => {
+        ["funGreenhouseMonitor"] = new Spec { Unit = 0.7f, Emissive = 0.7f, Draw = g => {
         Fill(g, "#3c4656");
         // from #546b80 at (12.80,-15.60)
         // der Messwert als Schirmflaeche
@@ -753,7 +756,7 @@ public static partial class AreaSurfaces
         // geschaetzt (NavConsole/MonitorTree-Sprite)
         for (float y = 3f; y < g.H; y += 8f)
         {
-        Line(g, 0f, y, g.W, y, "#17141a", 2f, 1f);
+        Line(g, 0f, y, g.W, y, "#17141a", 2f, 0.4f);
         }
         Grain(g, new[] { "#2b262e", "#1c181f" }, 300, 0.12f, 8044);
         } },
@@ -787,7 +790,7 @@ public static partial class AreaSurfaces
         Fill(g, "#d3b58c");
         for (float x = 0f; x < g.W; x += 34f)
         {
-        Line(g, x, 0f, x, g.H, "#bd9f76", 2f, 1f);
+        Line(g, x, 0f, x, g.H, "#bd9f76", 2f, 0.45f);
         }
         Line(g, 0f, 3f, g.W, 3f, "#e2c79e", 2f, 1f);
         // Perle unter der Kappe
@@ -800,11 +803,11 @@ public static partial class AreaSurfaces
         Fill(g, "#b3946c");
         for (float x = 0f; x < g.W; x += 30f)
         {
-        Line(g, x, 0f, x, g.H, "#987b54", 2f, 1f);
+        Line(g, x, 0f, x, g.H, "#987b54", 2f, 0.55f);
         }
         for (float y = 0f; y < g.H; y += 26f)
         {
-        Line(g, 0f, y, g.W, y, "#a3855e", 1f, 1f);
+        Line(g, 0f, y, g.W, y, "#a3855e", 1f, 0.55f);
         }
         Line(g, 0f, 2f, g.W, 2f, "#c2a379", 1f, 1f);
         Grain(g, new[] { "#bb9c73", "#a68962" }, 340, 0.10f, 1591);
@@ -813,7 +816,7 @@ public static partial class AreaSurfaces
         Fill(g, "#6e5138");
         for (float x = 0f; x < g.W; x += 26f)
         {
-        Line(g, x, 0f, x, g.H, "#58402b", 2f, 1f);
+        Line(g, x, 0f, x, g.H, "#58402b", 2f, 0.5f);
         }
         Line(g, 0f, 2f, g.W, 2f, "#7d5f43", 1f, 1f);
         Rect(g, 0f, g.H * 0.86f, g.W, g.H * 0.14f, "#4a3624", 1f);
@@ -823,11 +826,11 @@ public static partial class AreaSurfaces
         Fill(g, "#3f3430");
         for (float x = 0f; x < g.W; x += 40f)
         {
-        Line(g, x, 0f, x, g.H, "#332a27", 2f, 1f);
+        Line(g, x, 0f, x, g.H, "#332a27", 2f, 0.5f);
         }
         for (float y = 0f; y < g.H; y += 28f)
         {
-        Line(g, 0f, y, g.W, y, "#332a27", 1f, 1f);
+        Line(g, 0f, y, g.W, y, "#332a27", 1f, 0.5f);
         }
         Line(g, 0f, 2f, g.W, 2f, "#4c403b", 1f, 1f);
         Grain(g, new[] { "#463a35", "#362c29" }, 320, 0.10f, 232);
@@ -836,7 +839,7 @@ public static partial class AreaSurfaces
         Fill(g, "#5a4430");
         for (float y = 0f; y < g.H; y += 22f)
         {
-        Line(g, 0f, y, g.W, y, "#493624", 2f, 1f);
+        Line(g, 0f, y, g.W, y, "#493624", 2f, 0.45f);
         }
         Line(g, 0f, 2f, g.W, 2f, "#68503a", 1f, 1f);
         Grain(g, new[] { "#61492f", "#503b28" }, 300, 0.10f, 6052);
@@ -859,7 +862,7 @@ public static partial class AreaSurfaces
         Fill(g, "#caa06a");
         for (float y = 3f; y < g.H; y += 7f)
         {
-        Line(g, 0f, y, g.W, y, "#d5ad77", 1f, 1f);
+        Line(g, 0f, y, g.W, y, "#d5ad77", 1f, 0.3f);
         }
         Line(g, 0f, 1f, g.W, 1f, "#dbb684", 1f, 0.5f);
         Line(g, 0f, g.H - 2f, g.W, g.H - 2f, "#b18a56", 1f, 0.5f);
@@ -869,7 +872,7 @@ public static partial class AreaSurfaces
         Fill(g, "#5f6e66");
         for (float y = 2f; y < g.H; y += 6f)
         {
-        Line(g, 0f, y, g.W, y, "#6a7a71", 1f, 1f);
+        Line(g, 0f, y, g.W, y, "#6a7a71", 1f, 0.35f);
         }
         Line(g, 0f, 1f, g.W, 1f, "#71817a", 1f, 0.6f);
         Line(g, 0f, g.H - 2f, g.W, g.H - 2f, "#4d5a53", 1f, 0.6f);
@@ -882,7 +885,7 @@ public static partial class AreaSurfaces
         Fill(g, "#3c3a38");
         for (float x = 0f; x < g.W; x += 12f)
         {
-        Line(g, x, 0f, x, g.H, "#2e2c2b", 2f, 1f);
+        Line(g, x, 0f, x, g.H, "#2e2c2b", 2f, 0.55f);
         }
         Line(g, 0f, 2f, g.W, 2f, "#4a4845", 1f, 1f);
         // helle Oberkante
@@ -890,7 +893,7 @@ public static partial class AreaSurfaces
         Rect(g, 0f, g.H * 0.88f, g.W, g.H * 0.12f, "#242220", 1f);
         Grain(g, new[] { "#444240", "#333130" }, 300, 0.09f, 9683);
         } },
-        ["funKitchenBurner"] = new Spec { Unit = 0.30f, Draw = g => {
+        ["funKitchenBurner"] = new Spec { Unit = 0.30f, Emissive = 0.55f, Draw = g => {
         // PORT: nicht vollstaendig uebersetzbar, auf die Grundfarbe reduziert.
         // Von Hand nachzubauen sind:
         //   grd.addColorStop(0, '#ffd27a')
@@ -925,7 +928,7 @@ public static partial class AreaSurfaces
         Fill(g, "#ad7440");
         for (float y = 0f; y < g.H; y += 9f)
         {
-        Line(g, 0f, y, g.W, y, "#9c6736", 1f, 1f);
+        Line(g, 0f, y, g.W, y, "#9c6736", 1f, 0.25f);
         }
         Grain(g, new[] { "#b87c46", "#9f6939" }, 700, 0.13f, 2147);
         } },
@@ -980,7 +983,7 @@ public static partial class AreaSurfaces
         Fill(g, "#a89d8e");
         Grain(g, new[] { "#b8ad9e", "#978c7d" }, 200, 0.14f, 1751);
         } },
-        ["funLabCap"] = new Spec { Unit = 0.5f, Draw = g => {
+        ["funLabCap"] = new Spec { Unit = 0.5f, Emissive = 0.32f, Draw = g => {
         // PORT: nicht vollstaendig uebersetzbar, auf die Grundfarbe reduziert.
         // Von Hand nachzubauen sind:
         //   grd.addColorStop(0, '#4d8f59')
@@ -1099,7 +1102,7 @@ public static partial class AreaSurfaces
         Fill(g, "#b3a88c");
         Grain(g, new[] { "#a3987c", "#c1b69a" }, 500, 0.12f, 5139);
         } },
-        ["funLookoutCrystal"] = new Spec { Unit = 1.2f, Detail = 1, Draw = g => {
+        ["funLookoutCrystal"] = new Spec { Unit = 1.2f, Emissive = 0.4f, Detail = 1, Draw = g => {
         Fill(g, "#7a1330");
         Grain(g, new[] { "#660f27", "#932040" }, 600, 0.16f, 6751);
         Rect(g, 0f, 0f, g.W * 0.18f, g.H, "#b02a4c", 1f);
@@ -1123,7 +1126,7 @@ public static partial class AreaSurfaces
         Fill(g, "#b47743");
         for (float x = 0f; x < g.W; x += 7f)
         {
-        Line(g, x, 0f, x, g.H, "#a06a3c", 2f, 1f);
+        Line(g, x, 0f, x, g.H, "#a06a3c", 2f, 0.35f);
         }
         Line(g, 0f, 1f, g.W, 1f, "#c4854e", 2f, 1f);
         Grain(g, new[] { "#bd7f4a", "#a86e3e" }, 500, 0.14f, 1921);
@@ -1183,11 +1186,11 @@ public static partial class AreaSurfaces
         Fill(g, "#426e96");
         for (float x = 0f; x < g.W; x += 10f)
         {
-        Line(g, x, 0f, x, g.H, "#386084", 2f, 1f);
+        Line(g, x, 0f, x, g.H, "#386084", 2f, 0.5f);
         }
         for (float y = 0f; y < g.H; y += 10f)
         {
-        Line(g, 0f, y, g.W, y, "#386084", 2f, 1f);
+        Line(g, 0f, y, g.W, y, "#386084", 2f, 0.5f);
         }
         } },
         ["funMeetingCabinet"] = new Spec { Unit = 0.7f, Draw = g => {
@@ -1225,7 +1228,7 @@ public static partial class AreaSurfaces
         // from #d7a259 at (12.00,8.00)
         for (float y = 5f; y < g.H; y += 13f)
         {
-        Line(g, 0f, y, g.W, y, "#a8763e", 2f, 1f);
+        Line(g, 0f, y, g.W, y, "#a8763e", 2f, 0.35f);
         }
         // Schrammen (#c8854b)
         for (float i = 0f; i < 6f; i += 1f)
@@ -1274,7 +1277,7 @@ public static partial class AreaSurfaces
         }
         for (float i = 0f; i < 5f; i += 1f)
         {
-        Line(g, rnd.Next() * g.W, rnd.Next() * g.H, rnd.Next() * g.W, rnd.Next() * g.H, "#322e44", 1.5f, 1f);
+        Line(g, rnd.Next() * g.W, rnd.Next() * g.H, rnd.Next() * g.W, rnd.Next() * g.H, "#322e44", 1.5f, 0.5f);
         }
         // Risse
         Grain(g, new[] { "#564f68", "#443e58" }, 400, 0.14f, 3139);
@@ -1317,7 +1320,7 @@ public static partial class AreaSurfaces
         Line(g, g.W - 2f, 0f, g.W - 2f, g.H, "#8e6634", 2f, 1f);
         for (float y = 6f; y < g.H; y += 10f)
         {
-        Line(g, 4f, y, g.W - 4f, y, "#966c38", 1.5f, 1f);
+        Line(g, 4f, y, g.W - 4f, y, "#966c38", 1.5f, 0.35f);
         }
         Grain(g, new[] { "#c2955a", "#a87c44" }, 300, 0.12f, 6530);
         } },
@@ -1326,7 +1329,7 @@ public static partial class AreaSurfaces
         // from #83624a at (10.80,8.90)
         for (float y = 3f; y < g.H; y += 7f)
         {
-        Line(g, 0f, y, g.W, y, "#5a4232", 1.5f, 1f);
+        Line(g, 0f, y, g.W, y, "#5a4232", 1.5f, 0.4f);
         }
         // Maserung
         Line(g, 1f, 0f, 1f, g.H, "#82624a", 2f, 1f);
@@ -1338,7 +1341,7 @@ public static partial class AreaSurfaces
         // from #312325 at (12.70,6.30)
         for (float y = 2f; y < g.H; y += 6f)
         {
-        Line(g, 0f, y, g.W, y, "#1e1517", 1.5f, 1f);
+        Line(g, 0f, y, g.W, y, "#1e1517", 1.5f, 0.4f);
         }
         Grain(g, new[] { "#322428", "#241a1c" }, 300, 0.14f, 4530);
         } },
@@ -1349,7 +1352,7 @@ public static partial class AreaSurfaces
         Line(g, 0f, 2f, g.W, 2f, "#33201e", 2f, 1f);
         for (float y = 8f; y < g.H; y += 12f)
         {
-        Line(g, 0f, y, g.W, y, "#120808", 2f, 1f);
+        Line(g, 0f, y, g.W, y, "#120808", 2f, 0.3f);
         }
         // Blechfugen
         Grain(g, new[] { "#241412", "#140a09" }, 350, 0.16f, 2153);
@@ -1364,7 +1367,7 @@ public static partial class AreaSurfaces
         // geschaetzt: #44635b an (14.0,5.0) abgedunkelt
         Grain(g, new[] { "#253630", "#33483f" }, 500, 0.18f, 2667);
         } },
-        ["funMiningpitGlowVein"] = new Spec { Unit = 0.5f, Draw = g => {
+        ["funMiningpitGlowVein"] = new Spec { Unit = 0.5f, Emissive = 1.0f, Draw = g => {
         Fill(g, "#2a0f0c");
         // geschaetzt (Sprite-Rand)
         // geschaetzt (Sprite-Kern)
@@ -1380,7 +1383,7 @@ public static partial class AreaSurfaces
         Rect(g, g.W * (0.14f + 0.18f * i), g.H * 0.2f, 1f, g.H * 0.6f, "#ffa38a", 1f);
         }
         } },
-        ["funMiningpitSpinels"] = new Spec { Unit = 0.6f, Draw = g => {
+        ["funMiningpitSpinels"] = new Spec { Unit = 0.6f, Emissive = 0.35f, Draw = g => {
         var rnd = new Rng(4625);
         Fill(g, "#3c1214");
         // from #491717 at (14.35,9.10)
@@ -1403,7 +1406,7 @@ public static partial class AreaSurfaces
         Line(g, 0f, g.H - 2f, g.W, g.H - 2f, "#2c322f", 2f, 1f);
         for (float x = 8f; x < g.W; x += 12f)
         {
-        Line(g, x, 4f, x, g.H - 4f, "#2a302d", 1.5f, 1f);
+        Line(g, x, 4f, x, g.H - 4f, "#2a302d", 1.5f, 0.3f);
         }
         Grain(g, new[] { "#444c48", "#343c38" }, 300, 0.14f, 7770);
         } },
@@ -1413,7 +1416,7 @@ public static partial class AreaSurfaces
         Line(g, 0f, 2f, g.W, 2f, "#453428", 2f, 1f);
         for (float y = 8f; y < g.H; y += 10f)
         {
-        Line(g, 0f, y, g.W, y, "#241a14", 2f, 1f);
+        Line(g, 0f, y, g.W, y, "#241a14", 2f, 0.3f);
         }
         Grain(g, new[] { "#3b2c22", "#2b201a" }, 300, 0.14f, 2258);
         } },
@@ -1481,11 +1484,11 @@ public static partial class AreaSurfaces
         Grain(g, new[] { "#54303f", "#3c1f2c" }, 800, 0.13f, 9704);
         for (float y = 0f; y < g.H; y += g.H / 2f)
         {
-        Line(g, 0f, y, g.W, y, "#341b28", 2f, 1f);
+        Line(g, 0f, y, g.W, y, "#341b28", 2f, 0.45f);
         }
         for (float x = 0f; x < g.W; x += g.W / 2f)
         {
-        Line(g, x, 0f, x, g.H, "#341b28", 2f, 1f);
+        Line(g, x, 0f, x, g.H, "#341b28", 2f, 0.45f);
         }
         } },
         ["funReactorWall"] = new Spec { Unit = 1.45f, Detail = 1, Draw = g => {
@@ -1540,11 +1543,11 @@ public static partial class AreaSurfaces
         // aus #606271 @(19.45,-6)
         for (float y = 0f; y < g.H; y += 20f)
         {
-        Line(g, 0f, y, g.W, y, "#43454d", 2f, 1f);
+        Line(g, 0f, y, g.W, y, "#43454d", 2f, 0.55f);
         }
         for (float x = 0f; x < g.W; x += 26f)
         {
-        Line(g, x, 0f, x, g.H, "#43454d", 2f, 1f);
+        Line(g, x, 0f, x, g.H, "#43454d", 2f, 0.55f);
         }
         for (float y = 8f; y < g.H; y += 20f)
         {
@@ -1564,14 +1567,14 @@ public static partial class AreaSurfaces
         Line(g, 0f, g.H - 2f, g.W, g.H - 2f, "#282a30", 2f, 1f);
         Grain(g, new[] { "#414349", "#303237" }, 350, 0.12f, 4449);
         } },
-        ["funReactorCoreGlow"] = new Spec { Unit = 0.9f, Detail = 1, Draw = g => {
+        ["funReactorCoreGlow"] = new Spec { Unit = 0.9f, Emissive = 0.95f, Detail = 1, Draw = g => {
         // PORT: nicht vollstaendig uebersetzbar, auf die Grundfarbe reduziert.
         // Von Hand nachzubauen sind:
         //   g.bezierCurveTo(w * 0.3, y - 5, w * 0.6, y + 5, w, y)
         Fill(g, "#0d3552");
         Grain(g, new[] { "#0d3552" }, 400, 0.06f, 8692);
         } },
-        ["funReactorMushCap"] = new Spec { Unit = 0.6f, Draw = g => {
+        ["funReactorMushCap"] = new Spec { Unit = 0.6f, Emissive = 0.85f, Draw = g => {
         // PORT: nicht vollstaendig uebersetzbar, auf die Grundfarbe reduziert.
         // Von Hand nachzubauen sind:
         //   grd.addColorStop(0, '#6fcfc7')
@@ -1584,7 +1587,7 @@ public static partial class AreaSurfaces
         Fill(g, "#120a11");
         for (float y = g.H * 0.30f; y < g.H; y += g.H * 0.24f)
         {
-        Line(g, 0f, y, g.W, y, "#0a050a", 2f, 1f);
+        Line(g, 0f, y, g.W, y, "#0a050a", 2f, 0.55f);
         }
         // Abnutzung an der Trittkante (sued)
         Rect(g, 0f, g.H * 0.06f, g.W, MathF.Max(2f, g.H * 0.10f), "#3a2129", 1f);
@@ -1647,7 +1650,7 @@ public static partial class AreaSurfaces
         Grain(g, new[] { "#dcc0a0", "#c0a078" }, 800, 0.16f, 4371);
         for (float y = 4f; y < g.H; y += 14f)
         {
-        Line(g, 0f, y, g.W, y, "#b89a72", 2f, 1f);
+        Line(g, 0f, y, g.W, y, "#b89a72", 2f, 0.12f);
         }
         } },
         ["funRecPath"] = new Spec { Unit = 1.2f, Detail = 1, Draw = g => {
@@ -1677,7 +1680,7 @@ public static partial class AreaSurfaces
         // from #8b6454
         for (float x = 0f; x < g.W; x += 22f)
         {
-        Line(g, x, 0f, x, g.H, "#63443a", 2f, 1f);
+        Line(g, x, 0f, x, g.H, "#63443a", 2f, 0.5f);
         }
         Line(g, 0f, 2f, g.W, 2f, "#8a6552", 2f, 1f);
         Grain(g, new[] { "#835e4c", "#6b4a3e" }, 400, 0.12f, 9406);
@@ -1687,7 +1690,7 @@ public static partial class AreaSurfaces
         // from #49423f
         for (float x = 0f; x < g.W; x += 26f)
         {
-        Line(g, x, 0f, x, g.H, "#2e2a28", 2f, 1f);
+        Line(g, x, 0f, x, g.H, "#2e2a28", 2f, 0.5f);
         }
         Line(g, 0f, 2f, g.W, 2f, "#4a443f", 2f, 1f);
         Grain(g, new[] { "#45403b", "#332e2c" }, 400, 0.12f, 2288);
@@ -1697,7 +1700,7 @@ public static partial class AreaSurfaces
         // from #9aa8a9
         for (float x = 0f; x < g.W; x += 18f)
         {
-        Line(g, x, 0f, x, g.H, "#768486", 2f, 1f);
+        Line(g, x, 0f, x, g.H, "#768486", 2f, 0.45f);
         }
         Line(g, 0f, 2f, g.W, 2f, "#9aa8a8", 2f, 1f);
         Grain(g, new[] { "#93a1a1", "#7d8b8d" }, 350, 0.10f, 9486);
@@ -1707,7 +1710,7 @@ public static partial class AreaSurfaces
         // from #9aa8a9 (top reads lighter in the zoom)
         for (float y = 6f; y < g.H; y += 15f)
         {
-        Line(g, 0f, y, g.W, y, "#879596", 2f, 1f);
+        Line(g, 0f, y, g.W, y, "#879596", 2f, 0.3f);
         }
         Grain(g, new[] { "#a2b0b0", "#8a9899" }, 350, 0.10f, 9260);
         } },
@@ -1716,7 +1719,7 @@ public static partial class AreaSurfaces
         // geschaetzt from the roof band at (-16.50, 1.40)
         for (float x = 0f; x < g.W; x += 24f)
         {
-        Line(g, x, 0f, x, g.H, "#6f818c", 2f, 1f);
+        Line(g, x, 0f, x, g.H, "#6f818c", 2f, 0.5f);
         }
         Line(g, 0f, 2f, g.W, 2f, "#94a6b1", 2f, 1f);
         Line(g, 0f, g.H - 2f, g.W, g.H - 2f, "#647681", 2f, 1f);
@@ -1754,11 +1757,11 @@ public static partial class AreaSurfaces
         // from #8897a7
         for (float y = 8f; y < g.H; y += 20f)
         {
-        Line(g, 0f, y, g.W, y, "#667482", 2f, 1f);
+        Line(g, 0f, y, g.W, y, "#667482", 2f, 0.45f);
         }
         for (float x = 0f; x < g.W; x += 26f)
         {
-        Line(g, x, 0f, x, g.H, "#667482", 2f, 1f);
+        Line(g, x, 0f, x, g.H, "#667482", 2f, 0.45f);
         }
         Grain(g, new[] { "#84929f", "#6c7a88" }, 400, 0.12f, 2360);
         } },
@@ -1779,7 +1782,7 @@ public static partial class AreaSurfaces
         Line(g, 0f, 2f, g.W, 2f, "#3d7044", 2f, 1f);
         for (float y = 8f; y < g.H; y += 12f)
         {
-        Line(g, 0f, y, g.W, y, "#26482c", 1f, 1f);
+        Line(g, 0f, y, g.W, y, "#26482c", 1f, 0.4f);
         }
         Grain(g, new[] { "#38663e", "#284e2e" }, 300, 0.12f, 7589);
         } },
@@ -1826,7 +1829,7 @@ public static partial class AreaSurfaces
         // aus #c8854b
         for (float y = 4f; y < g.H; y += 9f)
         {
-        Line(g, 0f, y, g.W, y, "#a06a3a", 2f, 1f);
+        Line(g, 0f, y, g.W, y, "#a06a3a", 2f, 0.35f);
         }
         Grain(g, new[] { "#c08550", "#a06a3a", "#8f5c30" }, 600, 0.12f, 2132);
         } },
@@ -2227,7 +2230,7 @@ public static partial class AreaSurfaces
         // from #39524f
         for (float x = 12f; x < g.W; x += 30f)
         {
-        Line(g, x, 0f, x, g.H, "#263a37", 2f, 1f);
+        Line(g, x, 0f, x, g.H, "#263a37", 2f, 0.5f);
         }
         Line(g, 0f, 2f, g.W, 2f, "#3d5a56", 2f, 1f);
         Grain(g, new[] { "#36504c", "#293e3b" }, 450, 0.12f, 1567);
@@ -2256,7 +2259,7 @@ public static partial class AreaSurfaces
         // from #666776
         for (float x = 14f; x < g.W; x += 34f)
         {
-        Line(g, x, 0f, x, g.H, "#484a56", 3f, 1f);
+        Line(g, x, 0f, x, g.H, "#484a56", 3f, 0.5f);
         }
         Grain(g, new[] { "#606270", "#4c4e5a" }, 380, 0.11f, 1616);
         } },
@@ -2265,7 +2268,7 @@ public static partial class AreaSurfaces
         // from #bb6d11
         for (float y = 3f; y < g.H; y += 8f)
         {
-        Line(g, 0f, y, g.W, y, "#8a4f0b", 2f, 1f);
+        Line(g, 0f, y, g.W, y, "#8a4f0b", 2f, 0.45f);
         }
         Grain(g, new[] { "#ac650f", "#8d540c" }, 320, 0.12f, 5748);
         } },
@@ -2282,13 +2285,13 @@ public static partial class AreaSurfaces
         }
         Grain(g, new[] { "#5f616c", "#4c4e59" }, 300, 0.10f, 2396);
         } },
-        ["funUpperengineCrystal"] = new Spec { Unit = 0.7f, Draw = g => {
+        ["funUpperengineCrystal"] = new Spec { Unit = 0.7f, Emissive = 0.9f, Draw = g => {
         Fill(g, "#1a4741");
         // geschaetzt (kein Atlas-Texel)
         // helle Facettenstreifen
         for (float x = 2f; x < g.W; x += 10f)
         {
-        Line(g, x, 0f, x - 3f, g.H, "#2f7a70", 2f, 1f);
+        Line(g, x, 0f, x - 3f, g.H, "#2f7a70", 2f, 0.55f);
         }
         Grain(g, new[] { "#205249", "#143a34" }, 250, 0.12f, 622);
         } },
@@ -2306,7 +2309,7 @@ public static partial class AreaSurfaces
         float lam = MathF.Max(4f, MathF.Round(g.H / 5f));
         for (float y = lam; y < g.H; y += lam)
         {
-        Line(g, 2f, y, g.W - 2f, y, "#2c3438", 2f, 1f);
+        Line(g, 2f, y, g.W - 2f, y, "#2c3438", 2f, 0.55f);
         }
         Line(g, 0f, 2f, g.W, 2f, "#78938f", 3f, 1f);
         // from #85948e, die helle Trittkante
@@ -2317,7 +2320,7 @@ public static partial class AreaSurfaces
         // from #666776
         for (float y = 4f; y < g.H; y += 10f)
         {
-        Line(g, 0f, y, g.W, y, "#484a56", 3f, 1f);
+        Line(g, 0f, y, g.W, y, "#484a56", 3f, 0.5f);
         }
         Line(g, 0f, 1f, g.W, 1f, "#6a6c7a", 2f, 1f);
         // die Faltung oben
@@ -2377,10 +2380,13 @@ public static partial class AreaSurfaces
         /// senkrechte Balken - aus zwei Metern derselbe Balken.
         ["funLabHazard"] = new Spec { Unit = 0.5f, Detail = 1, Draw = g => {
         Fill(g, "#c9a227");
-        for (float x = 0f; x < g.W; x += g.H * 0.9f)
-        {
-        Rect(g, x, 0f, g.H * 0.45f, g.H, "#1f1f22", 1f);
-        }
+        // Diagonal black stripes as in the prototype, now that FillQuad exists (they were upright
+        // bars with an odd gap at the tile edge). Three periods per tile, stripe half a period,
+        // slanted by the tile height: seamless on a square tile, the same recipe as mLabHazard.
+        float s = g.W / 3f;
+        var c = C("#1f1f22");
+        for (int i = -1; i < 4; i++)
+            g.FillQuad(i * s, g.H, i * s + s * 0.5f, g.H, i * s + s * 0.5f + g.H, 0, i * s + g.H, 0, c);
         } },
     };
 }

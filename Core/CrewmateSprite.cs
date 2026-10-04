@@ -53,9 +53,10 @@ public sealed class CrewmateSprite : IBillboardSource
         for (int f = 0; f < Frames; f++) BuildFrame(f);
     }
 
-    /// Frame 0 faces the viewer, frame 4 faces away, and the frames in between turn clockwise. The
-    /// renderer hands in the angle between the actor's facing and the direction it is being seen
-    /// from, so this mapping is all that is needed to pick a view.
+    /// Frame 4 shows the face, frame 0 the back (backpack fully visible, no visor), and the frames
+    /// in between turn clockwise. The renderer hands in the angle between the actor's facing and the
+    /// direction it is being seen from; relativeAngle 0 means the actor looks at the viewer and maps
+    /// to frame 4.
     public int FrameForAngle(float relativeAngle)
     {
         float t = (relativeAngle + NfMath.Pi) / NfMath.TwoPi;   // 0..1
@@ -113,7 +114,8 @@ public sealed class CrewmateSprite : IBillboardSource
      */
     private void BuildFrame(int frame)
     {
-        // The angle this frame is seen from. 0 = face on, PI = from behind.
+        // The angle this frame is seen from: cos(a) = 1 is face on (frame 4), cos(a) = -1 the back
+        // (frame 0).
         float a = (frame / (float)Frames) * NfMath.TwoPi - NfMath.Pi;
         float sin = MathF.Sin(a), cos = MathF.Cos(a);
 

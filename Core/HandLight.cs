@@ -56,9 +56,12 @@ public static class HandLight
 
         // Held low and to the right, angled up and inward: the pose you hold a torch in when you
         // are walking, not the pose you hold it in when you are pointing at something.
-        float baseX = Width * (0.855f + sway * 0.085f);
+        // A positive sway is a beam aimed to the LEFT of the view (right is heading minus 90
+        // degrees), so the torch moves left with it: the sign was the other way round and the lamp
+        // leaned away from its own beam (audit 2026-10-04).
+        float baseX = Width * (0.855f - sway * 0.085f);
         float baseY = Height * 1.06f;
-        float tipX = baseX - Width * (0.070f + sway * 0.050f);
+        float tipX = baseX - Width * (0.070f - sway * 0.050f);
         float tipY = Height * 0.585f;
 
         float len = baseY - tipY;
@@ -114,7 +117,7 @@ public static class HandLight
                 }
 
                 int o = (y * Width + x) * 4;
-                var dst = new NfColor(Pixels[o] / 255f, Pixels[o + 1] / 255f, Pixels[o + 2] / 255f);
+                var dst = NfColor.FromPixel(Pixels, o);   // undo the tone curve before mixing
 
                 // A soft halo of spilled light around the head, added rather than blended, so the
                 // torch looks like it is emitting instead of being pasted on.
@@ -178,7 +181,7 @@ public static class HandLight
 
                     int o = (y * Width + x) * 4;
                     float edge = NfMath.SmoothStep(1.06f, 0.90f, aa);
-                    var dst = new NfColor(Pixels[o] / 255f, Pixels[o + 1] / 255f, Pixels[o + 2] / 255f);
+                    var dst = NfColor.FromPixel(Pixels, o);   // undo the tone curve before mixing
                     NfColor.Lerp(dst, c, edge).ToBytes(Pixels, o);
                 }
             }

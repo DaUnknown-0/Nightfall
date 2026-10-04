@@ -396,7 +396,6 @@ public static class AuSurfaces
 
         float sx = n * 0.10f, sy = n * 0.16f, sw = n * 0.56f, sh = n * 0.48f;
         cv.FillRoundRect(sx, sy, sw, sh, n * 0.03f, new NfColor(0.102f, 0.376f, 0.431f));
-        cv.SetTintMask(sx, sy, sw, sh, 0f);
         var glow = new NfColor(0.478f, 0.886f, 0.925f);
         for (int i = 0; i < 4; i++)
         {
@@ -411,6 +410,12 @@ public static class AuSurfaces
         cv.StrokeEllipse(n * 0.80f, n * 0.26f, br, br, MathF.Max(1.2f, n / 200f), Ink);
         cv.FillEllipse(n * 0.80f, n * 0.46f, br, br, new NfColor(0.376f, 0.745f, 0.424f));
         cv.StrokeEllipse(n * 0.80f, n * 0.46f, br, br, MathF.Max(1.2f, n / 200f), Ink);
+
+        // The tint mask comes AFTER everything inside it is drawn: every Fill lifts the mask back to
+        // 1 (Canvas2D.Blend mixes alpha towards 1), so set first it left the readout lines tinted
+        // with the room colour (audit 2026-10-04). The lit screen keeps its colour; the two lamps stay
+        // with the housing (a rectangular mask would leave untinted corners around them).
+        cv.SetTintMask(sx, sy, sw, sh, 0f);
 
         cv.FillRect(0, n * 0.72f, n, n * 0.28f, Shade(c, 0.80f));
         cv.Line(0, n * 0.72f, n, n * 0.72f, MathF.Max(1.5f, n / 170f), Ink);

@@ -85,9 +85,13 @@ public sealed class Scene3D
     /// That is a better map than anything this file can work out at runtime from collision outlines
     /// and a photograph taken from above, and where it exists it is used instead.
     ///
-    /// The old path stays for the four maps that have not been described yet, and the render tool
-    /// can ask for it with --colliders to put the two side by side.
+    /// The old path stays for maps that are not described (Submerged, custom maps; the game itself
+    /// keeps the view off there), and the render tool can ask for it with --colliders to put the two
+    /// side by side.
     public static bool UseAreas = true;
+
+    /// Logging hook the plugin fills in; the core has no logger of its own.
+    public static Action<string> NightfallLog = _ => { };
 
     public static Scene3D Build(MapModel map) => Build(map, default);
 
@@ -101,8 +105,15 @@ public sealed class Scene3D
         // transformation - which is the single worst moment in the game to drop one.
         NightSky.EnsureBuilt();
 
+#if NIGHTFALL_TOOL
         if (UseAreas && MapAreaRegistry.AppliesTo(map.MapKey)) return BuildFromAreas(map, platform);
         return BuildFromColliders(map);
+#else
+        // In the game the view only switches on for maps with an area model (NightfallState), so the
+        // collider-based world (with WallSkin, PropFinder, BakedProps, PropSet, TextureBank,
+        // FrameRenderer, AtlasTinting) is compiled into the offline tool only (User 2026-10-04).
+        return BuildFromAreas(map, platform);
+#endif
     }
 
     /// The moving platform as the game reports it, in Among Us world units.
@@ -224,6 +235,7 @@ public sealed class Scene3D
     /// the floor is one plane; the built world has decks, a planet below them and one pit.
     public float GroundAt(NfVec2 p) => areas?.GroundAt(p.X, p.Y) ?? 0f;
 
+#if NIGHTFALL_TOOL   // the collider-based world: offline tool only (audit 2026-10-04, see Build)
     private static Scene3D BuildFromColliders(MapModel map)
     {
         var s = new Scene3D();
@@ -248,6 +260,7 @@ public sealed class Scene3D
         return s;
     }
 
+#endif
     // ================================================================================
     /// One object of the map, standing on the floor as a panel of its own artwork.
     public sealed class StandingProp
@@ -261,6 +274,7 @@ public sealed class Scene3D
 
     public readonly List<StandingProp> Standing = new();
 
+#if NIGHTFALL_TOOL
     /// How much of a prop's drawn rectangle is its FOOTPRINT rather than its elevation.
     ///
     /// Among Us draws a prop from slightly above and in front, so the bottom sliver of the drawing
@@ -560,8 +574,6 @@ public sealed class Scene3D
                      + $"({rejected} rejected as too large to be an object)");
     }
 
-    /// Logging hook the plugin fills in; the core has no logger of its own.
-    public static Action<string> NightfallLog = _ => { };
 
     /// Ground footprints of every box already standing, so a second one is never put on top of it.
     private readonly List<(float x0, float y0, float x1, float y1)> propFootprints = new();
@@ -749,6 +761,7 @@ public sealed class Scene3D
         return violet <= 0.06f;
     }
 
+#endif
     // ================================================================================
     // Spatial index
     // ================================================================================

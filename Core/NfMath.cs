@@ -98,6 +98,14 @@ public struct NfColor
 
     public static NfColor FromBytes(byte r, byte g, byte b) => new(r / 255f, g / 255f, b / 255f);
 
+    /// A pixel already written with ToBytes, back as LINEAR light: the shoulder of NfMath.ToByte is
+    /// undone. Passes that read a pixel, mix and write it again (faded billboards, the torch's halo,
+    /// the claws) compressed the bright end twice, and a figure faded to nothing still drew a darker
+    /// silhouette on a lit wall (audit 2026-10-04).
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static NfColor FromPixel(byte[] buffer, int offset) =>
+        new(NfMath.FromByte(buffer[offset]), NfMath.FromByte(buffer[offset + 1]), NfMath.FromByte(buffer[offset + 2]));
+
     public static readonly NfColor Black = new(0f, 0f, 0f);
     public static readonly NfColor White = new(1f, 1f, 1f);
 }
@@ -136,6 +144,16 @@ public static class NfMath
     {
         if (v > 0.75f) v = 0.75f + (v - 0.75f) / (1f + (v - 0.75f) * 4f);
         return (byte)(Clamp01(v) * 255f + 0.5f);
+    }
+
+    /// Inverse of ToByte: the soft shoulder above 0.75 taken back out (u = d / (1 + 4d) solved for d).
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static float FromByte(byte b)
+    {
+        float y = b / 255f;
+        if (y <= 0.75f) return y;
+        float u = MathF.Min(y - 0.75f, 0.249f);
+        return 0.75f + u / (1f - 4f * u);
     }
 
     /// Base-two logarithm, read off the float's own exponent with a quadratic fitted to the

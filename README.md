@@ -122,9 +122,8 @@ time for as long as the key is held.
 | `Nightfall / RequireEveryone` | `true` | only if everyone in the lobby has the mod (fairness) |
 | `Nightfall / RelativeMovement` | `true` | W walks forward instead of north |
 | `Look / RenderWidth` | `854` | internal resolution, height follows in 16:9 (see "How high the resolution may go") |
-| `Look / FieldOfView` | `75` | field of view in degrees |
+| `Look / HorizontalFieldOfView` | `105` | horizontal field of view in degrees (60 to 110) |
 | `Look / TorchRange` | `13` | torch range in world units |
-| `Look / TurnSpeed` | `9` | how fast the head follows the mouse |
 
 The `Survey / *` settings (AutoRun, SaveAtlas, IncludeConsoles, DumpSprites) now live in
 `BepInEx\config\com.tormod.nightfallsurveytool.cfg`, the own config file of
@@ -1303,9 +1302,9 @@ culling mask, is back in frame now via `WorldRelay`.
 | Security Guard | cameras, sealed vents | **partly open**: a placed camera hangs under the ship, not at root level, and therefore falls through the relay. The camera screen itself is a minigame and works | **open**, see below |
 | Engineer, Medic, Sheriff, Jackal, … | everything that is just a button | worked | label; keys unchanged |
 | Guesser | guessing in the meeting | worked | nothing: it is a mouse UI **in the meeting**, and there Nightfall releases the cursor anyway (`InputSuspended`) |
-| Shifter (modifier) | swap roles | **not triggerable** (`hotkey: null`) | key **V** |
-| anyone | place garlic | **not triggerable** (`hotkey: null`) | key **B** |
-| anyone | defuse bomb | **not triggerable** (`hotkey: null`), and that is the worst of the three: there is a time limit | key **N** |
+| Shifter (modifier) | swap roles | **not triggerable** (`hotkey: null`) | key **Y** |
+| anyone | place garlic | **not triggerable** (`hotkey: null`) | key **Z** |
+| anyone | defuse bomb | **not triggerable** (`hotkey: null`), and that is the worst of the three: there is a time limit | key **O** |
 
 #### TOR - Forgotten Fixes (UTS)
 
@@ -1339,6 +1338,9 @@ three mods hand out their keys independently of each other.
 | K | TOR event kick; UC manifest template |
 | L | TOR end round (developer) |
 | C | UC Saboteur trap; UTS Trickster mixup |
+| V | vent (Among Us' UseVent binding) |
+| B | UC Gambler bet |
+| N | UC Last Words box |
 | T | UC Poltergeist manifestation |
 | LeftShift / RightShift | TOR PropHunt unstuck / return to lobby |
 | Keypad+ | TOR spectator zoom |
@@ -1350,7 +1352,8 @@ three mods hand out their keys independently of each other.
 | Esc, Enter | menus; UC scan abort; UTS dialogs |
 
 **Free and therefore assignable** (in this order, by reachability with one hand on WASD):
-`V B N M X Y Z U O P`, then `, . ; ' [ ] / - =`.
+`M X Y Z U O P`, then `, . ; ' [ ] / - =` (V, B and N were taken out on 2026-10-04: the vent key,
+the Gambler's bet, the Last Words box).
 
 **Fixed assignments** (`NightfallKeys.Preferred`, named after the static field that holds the
 button: the only stable identifier, because `CustomButton.buttons` is otherwise just a list in
@@ -1358,9 +1361,9 @@ creation order):
 
 | Button | Key | Why this one |
 |---|---|---|
-| `HudManagerStartPatch.shifterShiftButton` | **V** | Shifter is a *modifier*, so it sits on top of an arbitrary role |
-| `HudManagerStartPatch.garlicButton` | **B** | belongs to **every** living player as soon as garlic is in the game |
-| `HudManagerStartPatch.defuseButton` | **N** | belongs to every living player while a bomb is armed |
+| `HudManagerStartPatch.shifterShiftButton` | **Y** | Shifter is a *modifier*, so it sits on top of an arbitrary role (not V: a venting Shifter shifted by accident) |
+| `HudManagerStartPatch.garlicButton` | **Z** | belongs to **every** living player as soon as garlic is in the game |
+| `HudManagerStartPatch.defuseButton` | **O** | belongs to every living player while a bomb is armed (not N: Last Words) |
 | `Saboteur.searchButton` | **M** | belongs to every non-Impostor, and it sat on **F**, which the Scout needs for its own role |
 | `LoverRevenger.revengerButton` | **X** | granted by the Lover modifier, sat on **Q** like the role underneath it |
 

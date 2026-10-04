@@ -273,9 +273,9 @@ public sealed class AreaBuilder
         }
     }
 
-    /// A squashed sphere on a point. `h` is its centre height in AREA units, the radii are in world
-    /// units for x and z and area units for y - the same split the prototype uses, because a ball's
-    /// radius is not squashed by V while a height is.
+    /// A squashed sphere on a point. `centreH` is its centre height in AREA units (scaled by V here);
+    /// all three radii are WORLD units, the vertical one included: it is added to the scaled centre
+    /// unscaled, because a ball's radius is not squashed by V while a height is.
     ///
     /// Six segments round and four up, and that is deliberate: a smooth sphere in the planet's own
     /// violet is a dome, and a dome on Polus reads as a bunker rather than a stone. Facets are what
@@ -321,9 +321,8 @@ public sealed class AreaBuilder
     }
 
     /// THE ENVELOPE of an airship: an ellipsoid with an airship's profile - a blunt bow and a
-    /// long tapering stern, instead of the symmetrical cigar a plain ellipsoid gives. `rx`/`rz`
-    /// are world units, `ry` area units (the same split Blob uses); `centreH` is the centre in
-    /// area units. `bow` is the -x end. The profile is the prototype's, world.js airshipBody:
+    /// long tapering stern, instead of the symmetrical cigar a plain ellipsoid gives. `rx`, `ry` and
+    /// `rz` are world units (as in Blob); `centreH` is the centre in area units. `bow` is the -x end. The profile is the prototype's, world.js airshipBody:
     /// p(x) = (1+x)^0.34 * (1-x)^0.80, normalised, applied to the circular cross-section.
     public void Envelope(float cx, float cy, float centreH, float rx, float ry, float rz,
                          string mat, int seg = 18, int rings = 12)

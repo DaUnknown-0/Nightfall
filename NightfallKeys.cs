@@ -88,6 +88,9 @@ public static class NightfallKeys
      *   K                 TOR event kick; UC Poltergeist manifest-template cycle
      *   L                 TOR force-end (developer)
      *   C                 UC Saboteur trap; UTS Trickster avatar mixup
+     *   V                 vent (Among Us' UseVent binding; TOR non-impostor venters)
+     *   B                 UC Gambler bet (a modifier, rides on any role)
+     *   N                 UC Last Words box (a modifier, not a CustomButton)
      *   T                 UC Poltergeist manifest
      *   U                 Bypass ("No-End") mod's "End Round" host button
      *   LeftShift         TOR PropHunt unstuck; RightShift TOR lobby rejoin
@@ -103,7 +106,8 @@ public static class NightfallKeys
      */
     private static readonly KeyCode[] FreePool =
     {
-        KeyCode.V, KeyCode.B, KeyCode.N, KeyCode.M, KeyCode.X, KeyCode.Y, KeyCode.Z,
+        // V, B and N left the pool on 2026-10-04 (vent, UC Gambler, UC Last Words; see above).
+        KeyCode.M, KeyCode.X, KeyCode.Y, KeyCode.Z,
         KeyCode.U, KeyCode.O, KeyCode.P,
         KeyCode.Comma, KeyCode.Period, KeyCode.Semicolon, KeyCode.Quote,
         KeyCode.LeftBracket, KeyCode.RightBracket, KeyCode.Slash, KeyCode.Minus, KeyCode.Equals,
@@ -159,11 +163,13 @@ public static class NightfallKeys
     {
         // --- The Other Roles: the three buttons that were mouse-only ---
         // The Shifter is a MODIFIER, so it rides on top of an arbitrary role's own buttons.
-        { "HudManagerStartPatch.shifterShiftButton", KeyCode.V },
+        // Not V: that is the vent key, and a Shifter who vents shifted for good (audit 2026-10-04).
+        { "HudManagerStartPatch.shifterShiftButton", KeyCode.Y },
         // Garlic and defuse belong to EVERY living player whenever the situation is on the board,
-        // so they must never collide with any role at all.
-        { "HudManagerStartPatch.garlicButton",       KeyCode.B },
-        { "HudManagerStartPatch.defuseButton",       KeyCode.N },
+        // so they must never collide with any role at all (B is the Gambler's now, N opens the Last
+        // Words box).
+        { "HudManagerStartPatch.garlicButton",       KeyCode.Z },
+        { "HudManagerStartPatch.defuseButton",       KeyCode.O },
 
         // --- Unknown's Collection: the crew counterplay button ---
         // The Saboteur's "search" button belongs to any non-impostor, so it lands on top of that
@@ -185,6 +191,7 @@ public static class NightfallKeys
         KeyCode.E, KeyCode.Space, KeyCode.Return, KeyCode.KeypadEnter, KeyCode.Escape,
         KeyCode.Tab, KeyCode.LeftAlt, KeyCode.RightAlt, KeyCode.LeftControl, KeyCode.RightControl,
         KeyCode.F1, KeyCode.F2, KeyCode.F8, KeyCode.F9,
+        KeyCode.V, KeyCode.B, KeyCode.N,
     };
 
     // ================================================================================

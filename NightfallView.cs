@@ -54,6 +54,7 @@ public static class NightfallView
     private static Scene3D scene;
     private static readonly CrewmateSprite crewSprite = new();
     private static readonly WerewolfSprite wolfSprite = new();
+    private static readonly EyeGlowSprite eyeSprite = new();
     private static readonly List<Billboard> billboards = new(24);
 
     // ---- The screen arrows, taken off the lens and put into the world -------------------------
@@ -111,6 +112,50 @@ public static class NightfallView
     // ================================================================================
     // Lifecycle
     // ================================================================================
+    /// True once the 3D world of the current map exists (built by Prebuild or the first Activate).
+    public static bool HasScene => scene != null;
+
+    /// Builds the 3D world without showing it. The build takes 0.4 to 2 s on the main thread; done
+    /// lazily in the first Activate() that freeze landed exactly on the transformation or the round
+    /// start (audit 2026-10-04). NightfallState calls this at a quieter moment instead.
+    public static bool Prebuild()
+    {
+        if (scene != null) return true;
+        try
+        {
+            if (!SceneGeometry.IsBuilt && !SceneGeometry.Build()) return false;
+            BuildScene();
+            return scene != null;
+        }
+        catch (Exception e)
+        {
+            NightfallPlugin.Logger?.LogError($"[Nightfall] Prebuild failed: {e}");
+            return false;
+        }
+    }
+
+    private static void BuildScene()
+    {
+        var map = SceneGeometry.Current;
+        if (map == null) return;
+        var t0 = DateTime.Now;
+        // MEMORY (2026-08-29): the process, not the catalogue. AreaSurfaces reports what it
+        // retains, but the crash that started all this was the 32-bit address space running
+        // out, and only the process total says how close that is. Private bytes before and
+        // after, so the log reads "world build: +58 MB, 1244 MB now" next to the triangle
+        // count - the number CrashDiagnostics' 30-second heartbeat cannot isolate.
+        float mbBefore = PrivateMb();
+        // The rides first: the platform's two ends go INTO the build (its disc is built at
+        // every slot along the ride), the ladders and the zipline are kept for the ground.
+        var platform = NightfallRides.Discover();
+        scene = Scene3D.Build(map, platform);
+        float mbAfter = PrivateMb();
+        NightfallPlugin.Logger?.LogInfo(
+            $"[Nightfall] Model built in {(DateTime.Now - t0).TotalMilliseconds:F0} ms: "
+            + $"{scene.TriangleCount} triangles; process +{mbAfter - mbBefore:0} MB "
+            + $"({mbAfter:0} MB private now).");
+    }
+
     public static void Activate()
     {
         if (IsActive) return;
@@ -122,27 +167,8 @@ public static class NightfallView
                 return;
             }
 
-            if (scene == null)
-            {
-                var map = SceneGeometry.Current;
-                if (map == null) return;
-                var t0 = DateTime.Now;
-                // MEMORY (2026-08-29): the process, not the catalogue. AreaSurfaces reports what it
-                // retains, but the crash that started all this was the 32-bit address space running
-                // out, and only the process total says how close that is. Private bytes before and
-                // after, so the log reads "world build: +58 MB, 1244 MB now" next to the triangle
-                // count - the number CrashDiagnostics' 30-second heartbeat cannot isolate.
-                float mbBefore = PrivateMb();
-                // The rides first: the platform's two ends go INTO the build (its disc is built at
-                // every slot along the ride), the ladders and the zipline are kept for the ground.
-                var platform = NightfallRides.Discover();
-                scene = Scene3D.Build(map, platform);
-                float mbAfter = PrivateMb();
-                NightfallPlugin.Logger?.LogInfo(
-                    $"[Nightfall] Model built in {(DateTime.Now - t0).TotalMilliseconds:F0} ms: "
-                    + $"{scene.TriangleCount} triangles; process +{mbAfter - mbBefore:0} MB "
-                    + $"({mbAfter:0} MB private now).");
-            }
+            if (scene == null) BuildScene();
+            if (scene == null) return;
 
             EnsureScreen();
             eyeSmooth = float.NaN;      // fresh view, no stale height to glide away from
@@ -502,6 +528,12 @@ public static class NightfallView
         }
     }
 
+    // The ground under ANOTHER figure (player, pet, body): a ride (platform, ladder, zipline) as
+    // well, not only for the local player (audit 2026-10-04: someone on the moving platform was
+    // drawn down in the pit, someone on a ladder inside the wall band).
+    private static float GroundForFigure(Vector2 p) =>
+        NightfallRides.GroundOverride(p, scene) ?? scene.GroundAt(new NfVec2(p.x, p.y));
+
     /*
      * THE GROUND UNDER THE PLAYER, with two things the plain deck lookup gets wrong.
      *
@@ -583,7 +615,10 @@ public static class NightfallView
 
         // Resolved once per frame rather than per player: the reflection into Unknown's Collection
         // is cheap but not free, and there are up to fifteen players.
-        var wolf = NightfallState.TheWerewolf();
+        // Only a TRANSFORMED werewolf is the beast: in "Always" mode the view runs the whole round,
+        // and before his photo existed the human werewolf was drawn in fur, a role leak (audit
+        // 2026-10-04).
+        var wolf = NightfallState.WolfFormActive() ? NightfallState.TheWerewolf() : null;
         byte? wolfId = wolf != null ? wolf.PlayerId : (byte?)null;
 
         foreach (var p in PlayerControl.AllPlayerControls)
@@ -624,8 +659,31 @@ public static class NightfallView
                 ShadowColor = isWolf ? WerewolfSprite.FurShadow : ColorOf(p, true),
                 // Feet on whatever they are standing on - a stair, the dropship deck - not on
                 // the reference floor. Same rule as the eye height.
-                Base = scene.GroundAt(new NfVec2(pos.x, pos.y)),
+                Base = GroundForFigure(new Vector2(pos.x, pos.y)),
             });
+
+            // The beast's eyes over its photograph (User 2026-10-04): self-lit, so they show in the
+            // dark outside the beam, and only while it faces the viewer (EyeGlowSprite). A hair
+            // closer to the viewer than the body, so the back-to-front sort draws them on top.
+            if (isWolf && shot != null)
+            {
+                var wp = new NfVec2(pos.x, pos.y);
+                var toView = View.Position - wp;
+                float tl = toView.Length;
+                var ep = tl > 0.01f ? wp + toView * (0.04f / tl) : wp;
+                float bodyH = shot.WorldHeight;
+                billboards.Add(new Billboard
+                {
+                    Position = ep,
+                    Facing = TrackFacing(p, pos),
+                    Source = eyeSprite,
+                    Height = bodyH * 0.075f,
+                    Color = new NfColor(1f, 0.6f, 0.2f),
+                    ShadowColor = new NfColor(1f, 0.6f, 0.2f),
+                    Base = GroundForFigure(new Vector2(pos.x, pos.y)) + bodyH * 0.74f,
+                    Glow = 1f,
+                });
+            }
 
             // The pet, as its own billboard at its own position: it trails its owner by up to a
             // metre, so baked into the owner's photograph it would hover at their hip. It faces
@@ -641,7 +699,7 @@ public static class NightfallView
                     Height = petShot.WorldHeight,
                     Color = ColorOf(p, false),
                     ShadowColor = ColorOf(p, true),
-                    Base = scene.GroundAt(new NfVec2(petPos.x, petPos.y)),
+                    Base = GroundForFigure(new Vector2(petPos.x, petPos.y)),
                 });
             }
         }
@@ -673,7 +731,7 @@ public static class NightfallView
                     Height = 0.34f,
                     Color = owner != null ? ColorOf(owner, false) : new NfColor(0.5f, 0.5f, 0.5f),
                     ShadowColor = owner != null ? ColorOf(owner, true) : new NfColor(0.25f, 0.25f, 0.25f),
-                    Base = scene.GroundAt(new NfVec2(bp.x, bp.y)),
+                    Base = GroundForFigure(new Vector2(bp.x, bp.y)),
                 });
             }
         }
@@ -790,11 +848,29 @@ public static class NightfallView
         return facing;
     }
 
+    // The colour the player SHOWS (audit 2026-10-04: the fallback figure used the default outfit, so
+    // a morphed or camouflaged player appeared in his true colour until his photo existed). TOR's
+    // setLook only re-colours the body material, so that is read first (the same source TOR's own
+    // kill animation uses), then the current outfit, then the default one.
+    private static readonly int BodyColorId = Shader.PropertyToID("_BodyColor");
+    private static readonly int BackColorId = Shader.PropertyToID("_BackColor");
+
     private static NfColor ColorOf(PlayerControl p, bool shadow)
     {
         try
         {
-            int id = p.Data.DefaultOutfit.ColorId;
+            var mat = p.cosmetics?.currentBodySprite?.BodySprite?.material;
+            int prop = shadow ? BackColorId : BodyColorId;
+            if (mat != null && mat.HasProperty(prop))
+            {
+                var mc = mat.GetColor(prop);
+                if (mc.a > 0.01f) return new NfColor(mc.r, mc.g, mc.b);
+            }
+        }
+        catch { }
+        try
+        {
+            int id = (p.CurrentOutfit ?? p.Data.DefaultOutfit).ColorId;
             var arr = shadow ? Palette.ShadowColors : Palette.PlayerColors;
             if (id >= 0 && id < arr.Length)
             {

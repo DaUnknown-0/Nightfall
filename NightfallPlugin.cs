@@ -50,7 +50,7 @@ public class NightfallPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.nightfall";
     public const string PluginName = "Nightfall";
-    public const string PluginVersion = "0.3.4.1";
+    public const string PluginVersion = "0.3.4.2";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     public static ManualLogSource Logger { get; private set; }
@@ -64,8 +64,8 @@ public class NightfallPlugin : BasePlugin
     public static ConfigEntry<int> RenderWidth { get; private set; }
     public static ConfigEntry<float> FieldOfView { get; private set; }
     public static ConfigEntry<float> TorchRange { get; private set; }
-    public static ConfigEntry<float> TurnSpeed { get; private set; }
     public static ConfigEntry<float> MouseSensitivity { get; private set; }
+    public static ConfigEntry<bool> InvertY { get; private set; }
 
     // ---- keys ----
     public static ConfigEntry<bool> ShowKeyOnButton { get; private set; }
@@ -79,7 +79,9 @@ public class NightfallPlugin : BasePlugin
 
         NightfallOptions.Bind(Config);
         Enabled = Config.Bind("Nightfall", "Enabled", true,
-            "Switch the first-person view on when Unknown's Collection's werewolf transforms.");
+            "Use the first-person view (in every mode). Off: this player keeps the top-down view and "
+            + "counts as a player without Nightfall, so with RequireEveryone the view stays off for "
+            + "the whole lobby.");
         RequireEveryone = Config.Bind("Nightfall", "RequireEveryone", true,
             "Only arm the view when every player in the lobby has Nightfall installed. Whoever is "
             + "missing it would otherwise keep the top-down overview during the hunt, which is a "
@@ -98,15 +100,17 @@ public class NightfallPlugin : BasePlugin
                 + "still leaves the game its own share of a sixty-hertz frame. Drop to 640 if the "
                 + "machine is tight; 960 is for looking at the map rather than playing on it.",
                 new AcceptableValueRange<int>(160, 1280)));
-        FieldOfView = Config.Bind("Look", "FieldOfView", 75f,
-            new ConfigDescription("Horizontal field of view in degrees.",
-                new AcceptableValueRange<float>(50f, 110f)));
+        // New key (audit 2026-10-04): the old "FieldOfView" was described as horizontal but fed the
+        // projection as the VERTICAL angle (75 there was about 107 across on 16:9), and above about
+        // 96 vertical the cell culling switched itself off. This one really is horizontal and is
+        // converted with the screen's aspect ratio; 105 keeps roughly the old default look.
+        FieldOfView = Config.Bind("Look", "HorizontalFieldOfView", 105f,
+            new ConfigDescription("Horizontal field of view in degrees (converted to the vertical "
+                + "angle with the screen's aspect ratio).",
+                new AcceptableValueRange<float>(60f, 110f)));
         TorchRange = Config.Bind("Look", "TorchRange", 13f,
             new ConfigDescription("How far the flashlight reaches, in world units.",
                 new AcceptableValueRange<float>(4f, 30f)));
-        TurnSpeed = Config.Bind("Look", "TurnSpeed", 9f,
-            new ConfigDescription("How quickly the head follows the mouse.",
-                new AcceptableValueRange<float>(2f, 30f)));
 
         ShowKeyOnButton = Config.Bind("Keys", "ShowKeyOnButton", true,
             "Print each ability's key in the top-right corner of its button. In the first-person "
@@ -121,6 +125,8 @@ public class NightfallPlugin : BasePlugin
         MouseSensitivity = Config.Bind("Look", "MouseSensitivity", 3.2f,
             new ConfigDescription("How far the view turns per unit of mouse movement.",
                 new AcceptableValueRange<float>(0.5f, 12f)));
+        InvertY = Config.Bind("Look", "InvertY", false,
+            "Mouse up looks down, as in flight controls.");
 
         var enabledEntry = Config.Bind("General", "Enabled", true,
             "Whether this mod is loaded at all. Kept separate from the feature-level `Nightfall.Enabled` "
@@ -160,6 +166,7 @@ public class NightfallPlugin : BasePlugin
         try
         {
             Harmony.PatchAll();
+            AvatarCapture.TryPatchSetLook(Harmony);
             Logger.LogInfo($"[Nightfall] {PluginVersion} loaded. "
                            + "F9 forces the view on for testing.");
         }
@@ -176,13 +183,14 @@ public class NightfallPlugin : BasePlugin
 // Version display in the top-corner PingTracker readout, folded into the shared "Unknown's
 // Collective" line alongside this project family's other mods (see UnknownsCollective.cs).
 [HarmonyPatch(typeof(PingTracker), nameof(PingTracker.Update))]
-[HarmonyPriority(Priority.Low)]
 internal static class NightfallVersionDisplayPatch
 {
     // PERF: the line is built from a constant name and a constant version, so it was the same
     // string sixty times a second. Built once and held; nothing here can invalidate it.
     private static string cachedLine;
 
+    // On the METHOD: this HarmonyX ignores [HarmonyPriority] on the patch class (measured 02.10.).
+    [HarmonyPriority(Priority.Low)]
     public static void Postfix(PingTracker __instance)
     {
         if (__instance == null || __instance.text == null) return;

@@ -54,9 +54,11 @@ public sealed class CapturedSprite : IBillboardSource
         w = h = 0;
     }
 
-    /// Two frames: facing right, and facing left. Anything within a right angle of straight at the
-    /// viewer keeps the near side towards them.
-    public int FrameForAngle(float relativeAngle) => relativeAngle > 0f ? 1 : 0;
+    /// Two frames: facing right (the photograph, which AvatarCapture always takes facing right), and
+    /// mirrored, facing left. A negative relative angle is an actor moving to the viewer's LEFT, the
+    /// same convention CrewmateSprite follows (frame 2, visor on the left); the sign used to be the
+    /// other way round, so captured players walked backwards (audit 2026-10-04).
+    public int FrameForAngle(float relativeAngle) => relativeAngle < 0f ? 1 : 0;
 
     public bool Sample(int frame, int x, int y, out NfColor color, out float colorMaskWeight,
                        out float shadowMaskWeight)
