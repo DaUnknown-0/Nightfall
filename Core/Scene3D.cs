@@ -52,6 +52,11 @@ public sealed class Scene3D
     private NfVec2 min, max;
     private int gw, gh;
     private List<Tri3>[] buckets = Array.Empty<List<Tri3>>();
+    // The largest triangle radius per cell, and over all cells. A triangle is filed by its centre,
+    // so a long wall quad or a room floor reaches far beyond its cell; the cell tests in Query widen
+    // by these or they threw such triangles away before the per-triangle test ever saw them.
+    private float[] bucketRadius = Array.Empty<float>();
+    private float maxRadius;
 
     /// Triangles belonging to a door, so they can be hidden when it opens.
     private readonly Dictionary<int, List<Tri3>> doorTris = new();
@@ -250,6 +255,8 @@ public sealed class Scene3D
         public NfVec2 Ground;
         public float Base, Width, Height;
         public Surface3D Tex;
+        /// How much of the texture, from the top, the panel shows (1 = all of it).
+        public float VMax = 1f;
     }
 
     public readonly List<StandingProp> Standing = new();
@@ -288,6 +295,9 @@ public sealed class Scene3D
                 Width = p.WorldWidth,
                 Height = p.WorldHeight - foot,
                 Tex = tex,
+                // The footprint strip is cut off, not squeezed into the panel: it is the floor under
+                // the object seen from above and does not belong to its upright view.
+                VMax = 1f - FootprintFraction,
             });
             propFootprints.Add((p.Min.X, p.Min.Y, p.Max.X, p.Max.Y));
             standing++;
@@ -763,6 +773,8 @@ public sealed class Scene3D
         gw = Math.Max(1, (int)((max.X - min.X) / cell) + 1);
         gh = Math.Max(1, (int)((max.Y - min.Y) / cell) + 1);
         buckets = new List<Tri3>[gw * gh];
+        bucketRadius = new float[gw * gh];
+        maxRadius = 0f;
 
         foreach (var t in All)
         {
@@ -770,6 +782,8 @@ public sealed class Scene3D
             int cz = NfMath.ClampInt((int)((t.Centre.Z - min.Y) / cell), 0, gh - 1);
             int i = cz * gw + cx;
             (buckets[i] ??= new List<Tri3>()).Add(t);
+            if (t.Radius > bucketRadius[i]) bucketRadius[i] = t.Radius;
+            if (t.Radius > maxRadius) maxRadius = t.Radius;
         }
     }
 
@@ -794,7 +808,8 @@ public sealed class Scene3D
     public List<Tri3> Query(NfVec2 eye, float range, float heading, float fov)
     {
         queryResult.Clear();
-        int span = Math.Max(1, (int)(range / cell) + 1);
+        // The window reaches as far as a triangle filed outside it could still reach into range.
+        int span = Math.Max(1, (int)((range + maxRadius) / cell) + 1);
         int cx = (int)((eye.X - min.X) / cell);
         int cz = (int)((eye.Y - min.Y) / cell);
 
@@ -830,8 +845,10 @@ public sealed class Scene3D
                 // standing on that floor patch and inside that room.
                 if (cull && d2 > cell * cell * 2f)
                 {
-                    if (wx * lx + wz * ly < -margin) continue;
-                    if (wx * rx + wz * ry < -margin) continue;
+                    // plus the reach of this cell's largest triangle (see bucketRadius)
+                    float m = margin + bucketRadius[z * gw + x];
+                    if (wx * lx + wz * ly < -m) continue;
+                    if (wx * rx + wz * ry < -m) continue;
                 }
                 cellOrder.Add((d2, z * gw + x));
             }

@@ -79,11 +79,15 @@ public static class WorldRelay
     /// A hard ceiling, so a mod that spawns hundreds of pooled sprites can never stall the frame.
     private const int MaxRelayed = 64;
 
+    // Collect's per-frame measurements, reused (no allocation per frame).
+    private static readonly List<(Entry e, Vector2 centre, float sizeY, float depth, float alpha)> measured = new();
+
     private sealed class Entry
     {
         public GameObject Root;
         public readonly CapturedSprite Sprite = new();
         public float CapturedAt = -99f;
+        public float AttemptAt = -99f;   // last capture attempt, successful or not (see Collect)
         public float LastSizeY;
         // AUDIT-2026-08-16: the SpriteRenderers under Root, resolved once per Scan() (every
         // ScanInterval) instead of once per Measure() call (every frame, for up to MaxRelayed
@@ -215,6 +219,7 @@ public static class WorldRelay
     {
         entries.Clear();
         live.Clear();
+        measured.Clear();
         lastScan = -99f;
         rootScratch.Clear();
         rootSeenScratch.Clear();
@@ -236,7 +241,19 @@ public static class WorldRelay
         try
         {
             if (Time.time - lastScan >= ScanInterval) Scan();
+            float now = Time.time;
 
+            /*
+             * WHO GETS THE ONE PICTURE THIS SLOT. One capture per CaptureSpacing, and it used to go
+             * to the first stale object in list order: with three objects the rotation (3 x ~0.12 s)
+             * was already longer than RefreshSeconds, so the first three took every slot and a
+             * fourth one never got a picture at all - invisible, the worst failure this file knows.
+             * Now an object WITHOUT a picture comes first (oldest attempt first), then one that
+             * changed shape, then the stalest picture. A capture that fails is not retried for a
+             * second, so one broken object cannot eat the budget either.
+             */
+            measured.Clear();
+            Entry pick = null; float pickScore = -1f, pickSize = 0f;
             foreach (var e in live)
             {
                 var root = e.Root;
@@ -245,15 +262,28 @@ public static class WorldRelay
                 if (!Measure(e.Renderers, out var centre, out float sizeY, out float depth, out float alpha))
                     continue;
                 if (alpha <= 0.06f) continue;
+                measured.Add((e, centre, sizeY, depth, alpha));
 
                 // Re-photograph on a slow rotation, and at once when the object has changed shape
                 // (a burst that has grown, a clone that has turned round).
-                bool stale = Time.time - e.CapturedAt > RefreshSeconds
-                             || MathF.Abs(sizeY - e.LastSizeY) > e.LastSizeY * 0.15f;
-                if ((stale || !e.Sprite.IsValid) && Time.time - lastCapture > CaptureSpacing)
-                {
-                    if (Capture(root, e)) { lastCapture = Time.time; e.LastSizeY = sizeY; }
-                }
+                bool resized = MathF.Abs(sizeY - e.LastSizeY) > e.LastSizeY * 0.15f;
+                bool stale = now - e.CapturedAt > RefreshSeconds || resized;
+                if (now - e.AttemptAt < 1f && !e.Sprite.IsValid) continue;   // just failed, wait
+                float score = !e.Sprite.IsValid ? 1e9f + (now - e.AttemptAt)
+                            : resized ? 1e6f
+                            : stale ? now - e.CapturedAt
+                            : -1f;
+                if (score > pickScore) { pick = e; pickScore = score; pickSize = sizeY; }
+            }
+            if (pick != null && now - lastCapture > CaptureSpacing)
+            {
+                pick.AttemptAt = now;
+                lastCapture = now;   // the slot is spent, success or not
+                if (Capture(pick.Root, pick)) pick.LastSizeY = pickSize;
+            }
+
+            foreach (var (e, centre, sizeY, depth, alpha) in measured)
+            {
                 if (!e.Sprite.IsValid) continue;
 
                 /*

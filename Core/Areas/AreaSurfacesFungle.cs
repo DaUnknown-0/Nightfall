@@ -739,11 +739,8 @@ public static partial class AreaSurfaces
         // helle Zeilen
         for (float y = g.H * 0.2f; y < g.H * 0.58f; y += 4f)
         {
-        // PORT: nicht vollstaendig uebersetzbar, auf die Grundfarbe reduziert.
-        // Von Hand nachzubauen sind:
-        //   g.fillRect(w * 0.16, y, w * 0.68, 1.5)
-        Fill(g, "#8a8a8a");
-        Grain(g, new[] { "#8a8a8a" }, 400, 0.06f, 4704);
+        // von Hand nach dem Prototyp (fillStyle #7a92b4); der PORT-Ersatz Fill() hat die ganze Flaeche grau uebermalt
+        Rect(g, g.W * 0.16f, y, g.W * 0.68f, 1.5f, "#7a92b4", 1f);
         }
         Line(g, g.W * 0.12f, g.H * 0.14f, g.W * 0.12f+g.W * 0.76f, g.H * 0.14f, "#20242c", 3f, 1f);
         Line(g, g.W * 0.12f, g.H * 0.14f+g.H * 0.5f, g.W * 0.12f+g.W * 0.76f, g.H * 0.14f+g.H * 0.5f, "#20242c", 3f, 1f);
@@ -974,11 +971,8 @@ public static partial class AreaSurfaces
         Fill(g, "#69708a");
         for (float x = 0f; x <= g.W; x += MathF.Max(6f, g.W / 4f))
         {
-        // PORT: nicht vollstaendig uebersetzbar, auf die Grundfarbe reduziert.
-        // Von Hand nachzubauen sind:
-        //   g.fillRect(x | 0, 0, 2, h)
-        Fill(g, "#8a8a8a");
-        Grain(g, new[] { "#8a8a8a" }, 400, 0.06f, 2067);
+        // von Hand nach dem Prototyp (fillStyle #575d76)
+        Rect(g, MathF.Floor(x), 0f, 2f, g.H, "#575d76", 1f);
         }
         Grain(g, new[] { "#717893", "#5f6580" }, 250, 0.10f, 2067);
         } },
@@ -1017,11 +1011,8 @@ public static partial class AreaSurfaces
         float n = 2f;
         for (float i = 1f; i < n; i += 1f)
         {
-        // PORT: nicht vollstaendig uebersetzbar, auf die Grundfarbe reduziert.
-        // Von Hand nachzubauen sind:
-        //   g.fillRect((w * i / n) | 0, 0, 2, h)
-        Fill(g, "#8a8a8a");
-        Grain(g, new[] { "#8a8a8a" }, 400, 0.06f, 9425);
+        // von Hand nach dem Prototyp (wallPanel, fillStyle #474450)
+        Rect(g, MathF.Floor(g.W * i / n), 0f, 2f, g.H, "#474450", 1f);
         }
         Rect(g, 0f, 0f, g.W, 2f, "#474450", 1f);
         Rect(g, 0f, g.H - 3f, g.W, 3f, "#474450", 1f);
@@ -1385,11 +1376,8 @@ public static partial class AreaSurfaces
         }
         for (float i = 0f; i < 5f; i += 1f)
         {
-        // PORT: nicht vollstaendig uebersetzbar, auf die Grundfarbe reduziert.
-        // Von Hand nachzubauen sind:
-        //   g.fillRect(w * (0.14 + 0.18 * i), h * 0.2, 1, h * 0.6)
-        Fill(g, "#8a8a8a");
-        Grain(g, new[] { "#8a8a8a" }, 400, 0.06f, 2022);
+        // von Hand nach dem Prototyp (fillStyle #ffa38a)
+        Rect(g, g.W * (0.14f + 0.18f * i), g.H * 0.2f, 1f, g.H * 0.6f, "#ffa38a", 1f);
         }
         } },
         ["funMiningpitSpinels"] = new Spec { Unit = 0.6f, Draw = g => {
@@ -1404,11 +1392,8 @@ public static partial class AreaSurfaces
         // Glanzpunkte (Sprite)
         for (float i = 0f; i < 6f; i += 1f)
         {
-        // PORT: nicht vollstaendig uebersetzbar, auf die Grundfarbe reduziert.
-        // Von Hand nachzubauen sind:
-        //   g.fillRect(rnd.Next() * w, rnd.Next() * h, 1.5, 1.5)
-        Fill(g, "#8a8a8a");
-        Grain(g, new[] { "#8a8a8a" }, 400, 0.06f, 4625);
+        // von Hand nach dem Prototyp (fillStyle #7c2a30)
+        Rect(g, rnd.Next() * g.W, rnd.Next() * g.H, 1.5f, 1.5f, "#7c2a30", 1f);
         }
         } },
         ["funMiningpitCartIron"] = new Spec { Unit = 1.0f, Detail = 1, Draw = g => {
@@ -1444,11 +1429,8 @@ public static partial class AreaSurfaces
         // Glanz
         for (float i = 0f; i < 6f; i += 1f)
         {
-        // PORT: nicht vollstaendig uebersetzbar, auf die Grundfarbe reduziert.
-        // Von Hand nachzubauen sind:
-        //   g.fillRect(rnd.Next() * w, rnd.Next() * h, 1.5, 1.5)
-        Fill(g, "#8a8a8a");
-        Grain(g, new[] { "#8a8a8a" }, 400, 0.06f, 8698);
+        // von Hand nach dem Prototyp (fillStyle #d8b45a)
+        Rect(g, rnd.Next() * g.W, rnd.Next() * g.H, 1.5f, 1.5f, "#d8b45a", 1f);
         }
         } },
         ["funMiningpitCrystalRed"] = new Spec { Unit = 0.8f, Detail = 1, Draw = g => {
@@ -1568,11 +1550,8 @@ public static partial class AreaSurfaces
         {
             for (float x = 5f; x < g.W; x += 26f)
             {
-        // PORT: nicht vollstaendig uebersetzbar, auf die Grundfarbe reduziert.
-        // Von Hand nachzubauen sind:
-        //   g.fillRect(x, y, 2, 2)
-        Fill(g, "#8a8a8a");
-        Grain(g, new[] { "#8a8a8a" }, 400, 0.06f, 4653);
+        // von Hand nach dem Prototyp (fillStyle #494b53)
+        Rect(g, x, y, 2f, 2f, "#494b53", 1f);
             }
         }
         Line(g, 0f, 1f, g.W, 1f, "#6d707a", 2f, 1f);
@@ -1914,11 +1893,8 @@ public static partial class AreaSurfaces
         Line(g, 4f, g.H - 5f, g.W - 4f, 4f, "#2c332b", 3f, 1f);
         for (float i = 0f; i < 4f; i += 1f)
         {
-        // PORT: nicht vollstaendig uebersetzbar, auf die Grundfarbe reduziert.
-        // Von Hand nachzubauen sind:
-        //   g.fillRect(w * 0.18, h * (0.30 + i * 0.12), w * 0.28, 2)
-        Fill(g, "#8a8a8a");
-        Grain(g, new[] { "#8a8a8a" }, 400, 0.06f, 3612);
+        // von Hand nach dem Prototyp (fillStyle #2c332b)
+        Rect(g, g.W * 0.18f, g.H * (0.30f + i * 0.12f), g.W * 0.28f, 2f, "#2c332b", 1f);
         }
         Grain(g, new[] { "#434b3c", "#31382e" }, 350, 0.12f, 3612);
         } },
@@ -2029,11 +2005,8 @@ public static partial class AreaSurfaces
         // Messwert #140503-Familie, aufgehellt
         for (float i = 1f; i < 4f; i += 1f)
         {
-        // PORT: nicht vollstaendig uebersetzbar, auf die Grundfarbe reduziert.
-        // Von Hand nachzubauen sind:
-        //   g.fillRect((i * w) / 4, 0, 1.5, h)
-        Fill(g, "#8a8a8a");
-        Grain(g, new[] { "#8a8a8a" }, 400, 0.06f, 7639);
+        // von Hand nach dem Prototyp (fillStyle #150d08)
+        Rect(g, (i * g.W) / 4f, 0f, 1.5f, g.H, "#150d08", 1f);
         }
         Grain(g, new[] { "#241811", "#120b07" }, 300, 0.12f, 7639);
         } },

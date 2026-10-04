@@ -135,8 +135,11 @@ public sealed class MapAtlas
 
         // At most a few hundred samples: this runs once per surface when the model is built, and
         // sampling every pixel of a large room would be pointlessly slow.
-        int stepX = Math.Max(1, (px1 - px0) / 16);
-        int stepY = Math.Max(1, (py1 - py0) / 16);
+        // Rounded UP: at most 17 samples per axis, so the 289 slots below always cover the whole
+        // rectangle. Rounded down (range 31 -> step 1 -> 32 columns) the slots ran out after the
+        // first rows and the upper part of the rectangle never reached the median.
+        int stepX = Math.Max(1, (px1 - px0 + 15) / 16);
+        int stepY = Math.Max(1, (py1 - py0 + 15) / 16);
 
         Span<float> lum = stackalloc float[289];
         Span<int> off = stackalloc int[289];

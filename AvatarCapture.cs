@@ -44,9 +44,21 @@ public static class AvatarCapture
     {
         public CapturedSprite Sprite = new();
         public float CapturedAt = -99f;
+        // Last FAILED attempt. Every early "return false" of CaptureInto (nothing to photograph,
+        // empty picture, MissingMethod) left the entry invalid and unchanged, so For/ForPet tried the
+        // whole path again every frame. A failed entry now waits a second (see Due).
+        public float FailedAt = -99f;
         public int ColorId = -1;
         public string Cosmetics = "";
     }
+
+    private const float FailRetrySeconds = 1f;
+    private static bool missingMethodLogged;
+
+    private static bool Due(Entry e, bool stale, bool changed) =>
+        (stale || changed || !e.Sprite.IsValid)
+        && Time.time - e.FailedAt > FailRetrySeconds
+        && Time.time - lastAnyCapture > 0.05f;
 
     private static readonly Dictionary<byte, Entry> entries = new();
     /// Pets are photographed separately, under the same player id. See ForPet.
@@ -197,7 +209,7 @@ public static class AvatarCapture
 
         // Only one capture per frame across all players: the readback stalls the render thread and
         // fifteen of them in a row on the frame a werewolf transforms would be felt as a hitch.
-        if ((stale || changed || !e.Sprite.IsValid) && Time.time - lastAnyCapture > 0.05f)
+        if (Due(e, stale, changed))
         {
             if (CaptureInto(p, e, false)) lastAnyCapture = Time.time;
         }
@@ -238,7 +250,7 @@ public static class AvatarCapture
 
         bool stale = Time.time - e.CapturedAt > RefreshSeconds;
         bool changed = e.ColorId != ColorIdOf(p) || e.Cosmetics != CosmeticsKeyOf(p);
-        if ((stale || changed || !e.Sprite.IsValid) && Time.time - lastAnyCapture > 0.05f)
+        if (Due(e, stale, changed))
         {
             if (CaptureInto(p, e, true)) lastAnyCapture = Time.time;
         }
@@ -298,6 +310,7 @@ public static class AvatarCapture
         // method pooled would stay stuck as RenderTexture.active if ReadPixels/Apply throws.
         bool activeSet = false;
         Texture2D readback = null;
+        bool ok = false;
 
         try
         {
@@ -447,14 +460,20 @@ public static class AvatarCapture
             e.CapturedAt = Time.time;
             e.ColorId = ColorIdOf(p);
             e.Cosmetics = CosmeticsKeyOf(p);
+            ok = true;
             return true;
         }
         catch (MissingMethodException ex)
         {
             // Il2Cpp binding that a future Among Us no longer has. Said once, loudly, because the
             // symptom otherwise is "everybody is a drawn crewmate again" with nothing in the log.
-            NightfallPlugin.Logger?.LogWarning(
-                $"[Nightfall] Avatar capture unavailable on this build: {ex.Message}");
+            // Once per session: this catch comes before the general one, whose stamp it never got.
+            if (!missingMethodLogged)
+            {
+                missingMethodLogged = true;
+                NightfallPlugin.Logger?.LogWarning(
+                    $"[Nightfall] Avatar capture unavailable on this build: {ex.Message}");
+            }
             return false;
         }
         catch (Exception ex)
@@ -472,6 +491,8 @@ public static class AvatarCapture
         }
         finally
         {
+            // Any failure, whichever return or catch it left by, waits before the next try (Due).
+            if (!ok) e.FailedAt = Time.time;
             // Put every renderer back on its own layer, whatever happened above.
             foreach (var (go, layer) in moved)
             {

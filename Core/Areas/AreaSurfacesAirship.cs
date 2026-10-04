@@ -1596,11 +1596,8 @@ public static partial class AreaSurfaces
         {
             for (float x = 2f; x < g.W - 6f; x += 14f)
             {
-        // PORT: nicht vollstaendig uebersetzbar, auf die Grundfarbe reduziert.
-        // Von Hand nachzubauen sind:
-        //   g.fillRect(x, y, 10, 10)
-        Fill(g, "#8a8a8a");
-        Grain(g, new[] { "#8a8a8a" }, 400, 0.06f, 4105);
+        // von Hand nach dem Prototyp (fillStyle #95625a); der PORT-Ersatz Fill() hat die ganze Flaeche grau uebermalt
+        Rect(g, x, y, 10f, 10f, "#95625a", 1f);
             }
         }
         for (float y = 0f; y < g.H; y += 14f)
@@ -1722,11 +1719,8 @@ public static partial class AreaSurfaces
         // die dunkle Fuge zur Schraffur
         for (float y = 6f; y < g.H; y += 18f)
         {
-        // PORT: nicht vollstaendig uebersetzbar, auf die Grundfarbe reduziert.
-        // Von Hand nachzubauen sind:
-        //   g.fillRect(w * 0.3, y, 2, 2)
-        Fill(g, "#8a8a8a");
-        Grain(g, new[] { "#8a8a8a" }, 400, 0.06f, 889);
+        // Nieten, von Hand nach dem Prototyp (fillStyle #4a545c)
+        Rect(g, g.W * 0.3f, y, 2f, 2f, "#4a545c", 1f);
         }
         // Nieten
         Grain(g, new[] { "#68737b", "#525c64" }, 260, 0.10f, 889);
@@ -2216,11 +2210,8 @@ public static partial class AreaSurfaces
         // Ablaufgitter in der Rinne
         for (float x = 6f; x < g.W; x += 14f)
         {
-        // PORT: nicht vollstaendig uebersetzbar, auf die Grundfarbe reduziert.
-        // Von Hand nachzubauen sind:
-        //   g.fillRect(x, h * 0.30 - 2, 6, 4)
-        Fill(g, "#8a8a8a");
-        Grain(g, new[] { "#8a8a8a" }, 400, 0.06f, 3593);
+        // von Hand nach dem Prototyp (fillStyle #31606a)
+        Rect(g, x, g.H * 0.30f - 2f, 6f, 4f, "#31606a", 1f);
         }
         Line(g, g.W / 2f, 0f, g.W / 2f, g.H, "#93a7ab", 2f, 1f);
         // Fugenkreuz
@@ -2298,11 +2289,8 @@ public static partial class AreaSurfaces
         // Lüftungsschlitze oben
         for (float i = 0f; i < 3f; i += 1f)
         {
-        // PORT: nicht vollstaendig uebersetzbar, auf die Grundfarbe reduziert.
-        // Von Hand nachzubauen sind:
-        //   g.fillRect(w * 0.22, h * (0.14 + i * 0.05), w * 0.56, 2)
-        Fill(g, "#8a8a8a");
-        Grain(g, new[] { "#8a8a8a" }, 400, 0.06f, 4388);
+        // von Hand nach dem Prototyp (fillStyle #232b31)
+        Rect(g, g.W * 0.22f, g.H * (0.14f + i * 0.05f), g.W * 0.56f, 2f, "#232b31", 1f);
         }
         // Griffleiste
         Rect(g, g.W * 0.78f, g.H * 0.42f, 2f, g.H * 0.16f, "#8b999f", 1f);
@@ -2576,11 +2564,8 @@ public static partial class AreaSurfaces
         float step = MathF.Max(8f, MathF.Floor(g.H / 6f));
         for (float y = step; y < g.H - step / 2f; y += step)
         {
-        // PORT: nicht vollstaendig uebersetzbar, auf die Grundfarbe reduziert.
-        // Von Hand nachzubauen sind:
-        //   g.fillRect(4, y, w - 8, Math.max(2, step / 3))
-        Fill(g, "#8a8a8a");
-        Grain(g, new[] { "#8a8a8a" }, 400, 0.06f, 752);
+        // von Hand nach dem Prototyp (fillStyle #55666a)
+        Rect(g, 4f, y, g.W - 8f, MathF.Max(2f, step / 3f), "#55666a", 1f);
         }
         Line(g, 0f, 1f, g.W, 1f, "#78898b", 2f, 0.7f);
         Line(g, 0f, g.H - 2f, g.W, g.H - 2f, "#48585c", 2f, 0.7f);

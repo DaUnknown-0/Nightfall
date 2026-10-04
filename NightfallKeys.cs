@@ -202,6 +202,7 @@ public static class NightfallKeys
     private static readonly Dictionary<object, KeyCode> assigned = new();
     private static readonly Dictionary<object, TMPro.TextMeshPro> labels = new();
     private static int lastButtonCount = -1;
+    private static object lastFirstButton;
 
     // AUDIT-2026-09-03, KRITISCH: Blank() writes KeyCode.None into every button's `hotkey` for as
     // long as the chat has focus. On the frame the chat closes, Assign() ran BEFORE this fix and
@@ -212,6 +213,9 @@ public static class NightfallKeys
     // the FIRST time it was blanked this chat session; Restore() writes that value back before
     // Assign() ever looks at the button again.
     private static readonly Dictionary<object, KeyCode?> preBlank = new();
+
+    /// Keys are still blanked from a chat session and have to be written back (see the driver).
+    public static bool NeedsRestore => preBlank.Count > 0;
 
     // AUDIT-2026-09-03: per-run and per-button caches for the Tick() perf fix below. `activeCache`
     // is filled once per Assign() call and read back by Label() so `Active(b)` - a delegate
@@ -241,6 +245,7 @@ public static class NightfallKeys
         assigned.Clear();
         labels.Clear();
         lastButtonCount = -1;
+        lastFirstButton = null;
         preBlank.Clear();
         activeCache.Clear();
         labelTextCache.Clear();
@@ -262,14 +267,19 @@ public static class NightfallKeys
             if (list == null || list.Count == 0) return;
 
             // HudManager.Start throws the old buttons away and builds new ones. The list shrinking
-            // or growing is the cheapest reliable signal that the instances have been replaced.
-            bool listChanged = list.Count != lastButtonCount;
+            // or growing is the cheapest signal that the instances have been replaced - but not a
+            // reliable one on its own: TOR prunes the dead buttons before Nightfall's first tick of
+            // the round, so a round with as many buttons as the last one came back at the SAME
+            // count and kept the old instances' names. A different first instance catches that.
+            object first = list[0];
+            bool listChanged = list.Count != lastButtonCount || !ReferenceEquals(first, lastFirstButton);
             if (listChanged)
             {
                 lastButtonCount = list.Count;
+                lastFirstButton = first;
                 names.Clear();
                 MapNames(list);
-                Prune();
+                Prune(list);
             }
 
             // TYPING IS NOT PLAYING (AUDIT-2026-08-23, L-25).
@@ -693,7 +703,7 @@ public static class NightfallKeys
 
     /// Forgets buttons that are no longer in TOR's list, so the dictionaries do not grow for the
     /// whole session (HudManager.Start rebuilds every button of every round).
-    private static void Prune()
+    private static void Prune(IList list)
     {
         var stale = new List<object>();
         foreach (var kv in labels)
@@ -707,7 +717,13 @@ public static class NightfallKeys
         // just be dead weight, same reasoning as `assigned` above.
         activeCache.Clear();
         labelTextCache.Clear();
-        preBlank.Clear();
+        // preBlank only loses the buttons that are gone. A list change can also come mid-chat (a
+        // Deputy's handcuff swaps buttons); clearing it all then made the next Blank() record the
+        // already blanked None as the original, and Restore + Assign gave that button a pool key.
+        stale.Clear();
+        foreach (var k in preBlank.Keys)
+            if (!list.Contains(k)) stale.Add(k);
+        foreach (var k in stale) preBlank.Remove(k);
     }
 
     private static bool Active(object button)

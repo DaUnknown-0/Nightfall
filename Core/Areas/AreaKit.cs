@@ -339,9 +339,11 @@ public sealed class AreaBuilder
         {
             float th = i * 2f * NfMath.Pi / seg;
             float ph = j * NfMath.Pi / rings;
-            float ax = MathF.Cos(ph);                        // -1 (stern) .. 1 (bow), along x
+            float ax = MathF.Cos(ph);                        // -1 (bow) .. 1 (stern), along x
             float s0 = MathF.Max(1e-3f, MathF.Sin(ph));
-            float f = Prof(Math.Clamp(-ax, -0.9999f, 0.9999f)) / pmax / s0;
+            // Prof(ax), as the prototype applies prof() to the vertex x: blunt at -x (bow), long
+            // taper at +x (stern, where the fins sit). Prof(-ax) had built the hull mirrored.
+            float f = Prof(Math.Clamp(ax, -0.9999f, 0.9999f)) / pmax / s0;
             return new NfVec3(cx + ax * rx, cH + MathF.Cos(th) * s0 * f * ry,
                               cy + MathF.Sin(th) * s0 * f * rz);
         }
@@ -353,6 +355,39 @@ public sealed class AreaBuilder
                 var c = P(i + 1, j + 1); var d = P(i, j + 1);
                 Quad(a, b, c, d, tex, 1f, 1f, ShadeSide, emis);
             }
+    }
+
+    /// The cross-section of an Envelope at the length position `ax` (-1 bow .. 1 stern): the
+    /// height and width radii exactly as Envelope draws them, for anything that has to touch the
+    /// hull (the mooring lines).
+    public static (float ry, float rz) EnvelopeSection(float ax, float ry, float rz)
+    {
+        float pmax = 0f;
+        for (float x = -0.999f; x < 1f; x += 0.002f) pmax = MathF.Max(pmax, EnvProf(x));
+        float s = EnvProf(Math.Clamp(ax, -0.9999f, 0.9999f)) / pmax;
+        return (s * ry, s * rz);
+    }
+
+    private static float EnvProf(float x) => MathF.Pow(1f + x, 0.34f) * MathF.Pow(1f - x, 0.80f);
+
+    /// A thin square beam from `a` to `b` in any direction (X = au x, Y = world height, Z = au y).
+    /// Box can only stand upright; a line slanting up to a curved hull needs this.
+    public void Strut(NfVec3 a, NfVec3 b, float thick, string mat)
+    {
+        var d = (b - a).Normalized;
+        if ((b - a).Length <= 1e-4f) return;
+        var up = MathF.Abs(d.Y) > 0.95f ? new NfVec3(1f, 0f, 0f) : new NfVec3(0f, 1f, 0f);
+        var s1 = NfVec3.Cross(d, up).Normalized * (thick * 0.5f);
+        var s2 = NfVec3.Cross(d, s1).Normalized * (thick * 0.5f);
+        var tex = AreaSurfaces.Get(mat);
+        float emis = AreaSurfaces.EmissiveOf(mat);
+        float vRep = Rep(mat, (b - a).Length);
+        NfVec3[] o = { s1 + s2, s1 - s2, s2 * -1f - s1, s2 - s1 };
+        for (int k = 0; k < 4; k++)
+        {
+            var p = o[k]; var q = o[(k + 1) % 4];
+            Quad(a + p, a + q, b + q, b + p, tex, 1f, vRep, ShadeSide, emis);
+        }
     }
 
     /// A single horizontal slab of one material - the planet, a shore, a decal.

@@ -257,7 +257,7 @@ public sealed class Raster3D
             // whole object. Without it a harvested prop twenty metres off is a fistful of stray
             // texels that flicker as the player walks.
             float propLod = NfMath.FastLog2(MathF.Max(p.Tex.W / MathF.Max(1f, wPx),
-                                                      p.Tex.H / MathF.Max(1f, hPx)));
+                                                      p.Tex.H * p.VMax / MathF.Max(1f, hPx)));
 
             for (int x = x0; x <= x1; x++)
             {
@@ -271,7 +271,7 @@ public sealed class Raster3D
                     float vv = (y + 0.5f - topY) / hPx;
                     if (vv < 0f || vv >= 1f) continue;
 
-                    p.Tex.SampleLod(u, vv, propLod, out float r, out float g, out float b, out float a);
+                    p.Tex.SampleLod(u, vv * p.VMax, propLod, out float r, out float g, out float b, out float a);
                     // A HARD cutout, not a blend. Among Us' edges are crisp and antialiased into
                     // whatever was behind them when the object was photographed; feathering them a
                     // second time here puts a grey fringe around every object in the dark.

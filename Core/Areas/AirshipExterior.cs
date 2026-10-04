@@ -89,17 +89,27 @@ public static class AirshipExterior
         /*
          * MOORING LINES from the bulwark up to the envelope - the detail that makes the deck hang
          * FROM the balloon instead of floating under it. Four stations along each side, each line a
-         * thin box from the rail to the hull's surface at that station.
+         * thin beam from the rail to the hull's surface at that station.
+         *
+         * Slanted towards the nearest point of the cross-section, as the prototype does (world.js,
+         * the rope loop). They used to be upright boxes up to "the hull straight above", and the
+         * north rail (y 29) lies outside the envelope (its width ends at about y 25): there is no
+         * hull straight above it, and those four posts ended in mid-air beside the ship.
          */
+        float railH = 0.55f * AreaBuilder.V;                 // rail height in world units
+        float cH = cy * AreaBuilder.V;                       // envelope centre in world units
         foreach (float x in new[] { -6f, 6f, 18f, 30f })
         {
-            float t = (x - Cx) / Rx;
-            float shrink = MathF.Sqrt(MathF.Max(0.02f, 1f - t * t));
+            // Envelope uses its ry argument as a world height, so the section does too.
+            var (secY, secZ) = AreaBuilder.EnvelopeSection((x - Cx) / Rx, ry, Rz);
+            if (secY < 1f) continue;
             foreach (float y in new[] { 29.0f, -13.55f })
             {
-                float dy = (y - Cy) / (Rz * shrink);
-                float under = cy - ry * shrink * MathF.Sqrt(MathF.Max(0.04f, 1f - dy * dy));
-                b.Box(new AuRect(x - 0.06f, y - 0.06f, x + 0.06f, y + 0.06f), 0.55f, under, Dark, false);
+                float u = (y - Cy) / secZ, v = (railH - cH) / secY;
+                float n = MathF.Sqrt(u * u + v * v);
+                if (n < 1e-4f) n = 1f;
+                var top = new NfVec3(x, cH + secY * (v / n) * 0.985f, Cy + secZ * (u / n) * 0.985f);
+                b.Strut(new NfVec3(x, railH, y), top, 0.12f, Dark);
             }
         }
 

@@ -50,7 +50,7 @@ public class NightfallPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.nightfall";
     public const string PluginName = "Nightfall";
-    public const string PluginVersion = "0.3.4";
+    public const string PluginVersion = "0.3.4.1";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     public static ManualLogSource Logger { get; private set; }
@@ -235,7 +235,10 @@ internal static class NightfallDriverPatch
             // The ability keys. Deliberately outside the view's own lifetime: the point of the
             // labels is that the key is already known when the world goes dark, and a player who
             // only ever sees them during the hunt learns them at the worst possible moment.
-            if ((NightfallPlugin.KeysAlwaysOn?.Value ?? true) || NightfallView.IsActive)
+            // NeedsRestore: with KeysAlwaysOn off the layer stopped ticking when the view ended, and
+            // a view that ended while the chat was open (meeting, revert, death) left every ability
+            // key blanked to None until TOR reloaded its hotkeys.
+            if ((NightfallPlugin.KeysAlwaysOn?.Value ?? true) || NightfallView.IsActive || NightfallKeys.NeedsRestore)
                 NightfallKeys.Tick();
         }
         catch (Exception e)
