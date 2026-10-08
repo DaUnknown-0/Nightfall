@@ -436,6 +436,8 @@ public static class NightfallView
             screen.sprite = sprite;
             rawUploadFailed = false;
         }
+        // A holder rebuilt above while the texture survived would otherwise stay without a sprite.
+        if (sprite != null && screen.sprite != sprite) screen.sprite = sprite;
 
         FitToCamera(cam);
     }

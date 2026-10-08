@@ -280,6 +280,13 @@ public static class WorldRelay
                 pick.AttemptAt = now;
                 lastCapture = now;   // the slot is spent, success or not
                 if (Capture(pick.Root, pick)) pick.LastSizeY = pickSize;
+                else if (pick.Sprite.IsValid)
+                {
+                    // A failed re-shoot keeps the old picture. Without this the entry stayed
+                    // "resized" (score 1e6) and won every slot until the capture worked again.
+                    pick.CapturedAt = now;
+                    pick.LastSizeY = pickSize;
+                }
             }
 
             foreach (var (e, centre, sizeY, depth, alpha) in measured)

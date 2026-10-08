@@ -200,7 +200,12 @@ public static class NightfallControls
     public static void Tick()
     {
         var me = PlayerControl.LocalPlayer;
-        if (me == null) return;
+        if (me == null)
+        {
+            // Without a local player (disconnect, round end) the Alt check below is never reached.
+            ReleaseCursor();
+            return;
+        }
 
         if (!initialised)
         {
