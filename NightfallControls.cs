@@ -197,6 +197,15 @@ public static class NightfallControls
     private static bool cursorCaptured;
 
     /// Called every frame while the view is up.
+    /// Autotest only (NightfallDiag, NIGHTFALL_DIAG set): look in a given direction.
+    internal static void DiagLook(float heading)
+    {
+        Heading = NfMath.WrapAngle(heading);
+        TorchDir = Heading;
+        Pitch = 0f;
+        initialised = true;
+    }
+
     public static void Tick()
     {
         var me = PlayerControl.LocalPlayer;

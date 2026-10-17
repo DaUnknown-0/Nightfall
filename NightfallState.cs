@@ -200,6 +200,8 @@ public static class NightfallState
             var model = SceneGeometry.Current;
             if (model == null) return false;
             bool ok = Core.Scene3D.UseAreas && Core.MapAreaRegistry.AppliesTo(model.MapKey);
+            // Or a 3D model package that every player has (GpuWorld, see EveryoneHasWorld).
+            if (!ok) ok = NightfallHandshake.EveryoneHasWorld(GpuWorld.PackKeyForCurrentMap());
             if (!ok && lastLoggedMap != model.MapKey)
             {
                 lastLoggedMap = model.MapKey;
@@ -239,8 +241,9 @@ public static class NightfallState
         try
         {
             var client = AmongUsClient.Instance;
-            if (client != null && client.GameState != InnerNet.InnerNetClient.GameStates.Started)
-                return false;
+            if (client != null && client.GameState != InnerNet.InnerNetClient.GameStates.Started
+                && !(NightfallDiag.Active && client.GameState == InnerNet.InnerNetClient.GameStates.Joined))
+                return false;   // the autotest runs in freeplay, which stays "Joined"
         }
         catch { }
 
@@ -301,7 +304,18 @@ public static class NightfallState
     private static float nextPrebuildCheck;
     private static void PrebuildTick()
     {
-        if (NightfallView.HasScene || Time.time < nextPrebuildCheck) return;
+        if (Time.time < nextPrebuildCheck) return;
+        if (NightfallView.HasScene)
+        {
+            // The software world exists; the GPU model (if this map has a package) is read on a
+            // worker thread and built here, before the transformation needs it.
+            if (!GpuWorld.Ready)
+            {
+                nextPrebuildCheck = Time.time + 0.25f;
+                try { GpuWorld.Prepare(); } catch { }
+            }
+            return;
+        }
         nextPrebuildCheck = Time.time + 0.5f;
         try
         {
@@ -583,6 +597,7 @@ public static class NightfallHandshake
     public static void Reset()
     {
         respondents.Clear();
+        worlds.Clear();
         lastAnnounce = 0f;
         warned = false;
     }
@@ -599,8 +614,13 @@ public static class NightfallHandshake
             var w = AmongUsClient.Instance.StartRpcImmediately(
                 me.NetId, CallId, SendOption.Reliable, -1);
             w.Write(me.PlayerId);
+            // Which model package this player has ready for the map being played (empty = none).
+            // Older builds stop reading after the id, so the extra string costs them nothing.
+            string ready = MyWorld();
+            w.Write(ready);
             AmongUsClient.Instance.FinishRpcImmediately(w);
             respondents.Add(me.PlayerId);
+            worlds[me.PlayerId] = ready;
         }
         catch (Exception e)
         {
@@ -608,11 +628,52 @@ public static class NightfallHandshake
         }
     }
 
-    public static void Receive(byte playerId) => respondents.Add(playerId);
+    public static void Receive(byte playerId, string world)
+    {
+        respondents.Add(playerId);
+        worlds[playerId] = world ?? "";
+    }
 
     /// A player who leaves takes his entry with him: PlayerIds are reused in a lobby, and a newcomer
     /// without the mod who inherited the id counted as having it (reviews 2026-10-02).
-    public static void Forget(byte playerId) => respondents.Remove(playerId);
+    public static void Forget(byte playerId)
+    {
+        respondents.Remove(playerId);
+        worlds.Remove(playerId);
+    }
+
+    /// Model package per player for the current map (GpuWorld). A map Nightfall has no software
+    /// world for (Airship, Fungle, Unknown's Atlas) only gets the view when EVERYONE has the same
+    /// package: whoever lacked it would keep the top-down overview.
+    private static readonly Dictionary<byte, string> worlds = new();
+
+    private static string MyWorld()
+    {
+        try
+        {
+            string key = GpuWorld.PackKeyForCurrentMap();
+            return key != null && NightfallPlugin.GpuWorldEnabled?.Value != false && GpuModels.PathFor(key) != null ? key : "";
+        }
+        catch { return ""; }
+    }
+
+    public static bool EveryoneHasWorld(string key)
+    {
+        if (string.IsNullOrEmpty(key) || MyWorld() != key) return false;
+        if (NightfallPlugin.RequireEveryone != null && !NightfallPlugin.RequireEveryone.Value) return true;
+        try
+        {
+            int alive = 0;
+            foreach (var p in PlayerControl.AllPlayerControls)
+            {
+                if (p == null || p.Data == null || p.Data.Disconnected) continue;
+                alive++;
+                if (!worlds.TryGetValue(p.PlayerId, out var w) || w != key) return false;
+            }
+            return alive > 0;
+        }
+        catch { return false; }
+    }
 
     public static bool EveryoneHasMod()
     {
@@ -677,12 +738,23 @@ internal static class NightfallRpcPatch
     // otherwise register that player as "has the mod" and open the fairness gate for a lobby that
     // does not actually have it. The payload byte is still written by Announce() for wire
     // compatibility with older builds; it is deliberately not read here.
-    public static void Postfix(PlayerControl __instance, [HarmonyArgument(0)] byte callId)
+    public static void Postfix(PlayerControl __instance, [HarmonyArgument(0)] byte callId,
+                               [HarmonyArgument(1)] MessageReader reader)
     {
         try
         {
             if (callId != NightfallHandshake.CallId || __instance == null) return;
-            NightfallHandshake.Receive(__instance.PlayerId);
+            string world = "";
+            try
+            {
+                // Nothing in the game reads our call id, so the payload is untouched: id, then the
+                // model package (newer builds only).
+                reader.Position = 0;
+                reader.ReadByte();
+                if (reader.BytesRemaining > 0) world = reader.ReadString();
+            }
+            catch { world = ""; }
+            NightfallHandshake.Receive(__instance.PlayerId, world);
         }
         catch { }
     }

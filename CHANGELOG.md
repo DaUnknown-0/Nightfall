@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### GPU-Welt mit den Blender-Kartenmodellen (2026-10-18)
+- **Neuer GPU-Modus** (`GpuWorld.cs`): Liegt fuer die Karte ein Modellpaket in
+  `BepInEx\nightfall-models` (`<karte>.nfm`, erzeugt aus dem Blender-Nachbau), zeichnet die
+  Grafikkarte das 3D-Modell in Bildschirmaufloesung: Texturen, 8-m-Kacheln, Tueren als Platten,
+  Spieler/Marker/Rollenobjekte als Sprites, Taschenlampe und Vignette als Overlay. Ohne Paket bleibt
+  die Software-Ansicht.
+- **Fair statt heller**: Licht je Eckpunkt, Nebel und Personen-Sichtbarkeit kommen aus dem
+  Software-Renderer selbst (`Raster3D.LitColor`, `Seen`, `FogAmount`); Kacheln jenseits der
+  Sichtweite sind aus.
+- **Pakete** (`GpuModels.cs`, `GpuModelCatalog.g.cs`): Museum, Wald und Park werden aus dem
+  oeffentlichen Repo Nightfall-Models geladen und bei jedem Start per Groesse und SHA-256
+  geprueft; Vanilla-Pakete nur lokal.
+- **Handshake**: meldet zusaetzlich das bereite Paket der aktuellen Karte; Karten ohne
+  Software-Welt (Airship, Fungle, Atlas) schalten die Ansicht nur ein, wenn alle dasselbe Paket haben.
+- **Option** `Look / GpuWorld` (Standard an).
+- **Autotest** `NightfallDiag.cs` nur mit `NIGHTFALL_DIAG=gpu`. Gemessen auf 2560x1440: Skeld
+  17-24 ms, Polus 17-33 ms, Museum 17-44 ms pro Bild.
+
 ### Bug- und Perf-Audit 2026-09-03
 - **Tastenvergabe nach Chat, kritisch** (`NightfallKeys.cs`): Chat-Fokus setzte ALLE verwalteten
   Hotkeys auf `None`; nach dem Schließen bekamen frisch entstandene TOR-/UC-Rollenbuttons

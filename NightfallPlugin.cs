@@ -66,6 +66,7 @@ public class NightfallPlugin : BasePlugin
     public static ConfigEntry<float> TorchRange { get; private set; }
     public static ConfigEntry<float> MouseSensitivity { get; private set; }
     public static ConfigEntry<bool> InvertY { get; private set; }
+    public static ConfigEntry<bool> GpuWorldEnabled { get; private set; }
 
     // ---- keys ----
     public static ConfigEntry<bool> ShowKeyOnButton { get; private set; }
@@ -127,6 +128,12 @@ public class NightfallPlugin : BasePlugin
                 new AcceptableValueRange<float>(0.5f, 12f)));
         InvertY = Config.Bind("Look", "InvertY", false,
             "Mouse up looks down, as in flight controls.");
+        GpuWorldEnabled = Config.Bind("Look", "GpuWorld", true,
+            "Draw the map's 3D model on the graphics card when a model package for the map is in "
+            + "BepInEx/nightfall-models (Unknown's Atlas maps are downloaded automatically). Sharper "
+            + "picture at screen resolution; light, fog and who can be seen follow exactly the same "
+            + "rules as the software view, so nobody sees further or brighter with a better machine. "
+            + "Off: always the software view (RenderWidth applies).");
 
         var enabledEntry = Config.Bind("General", "Enabled", true,
             "Whether this mod is loaded at all. Kept separate from the feature-level `Nightfall.Enabled` "
@@ -223,6 +230,8 @@ internal static class NightfallDriverPatch
         try
         {
             if (ShipStatus.Instance == null) return;
+
+            NightfallDiag.Tick();
 
             // ---- the view ----
             if (Input.GetKeyDown(KeyCode.F9))

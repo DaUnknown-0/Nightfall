@@ -120,11 +120,12 @@ public static class NightfallView
     /// start (audit 2026-10-04). NightfallState calls this at a quieter moment instead.
     public static bool Prebuild()
     {
-        if (scene != null) return true;
+        if (scene != null) { GpuWorld.Prepare(); return true; }
         try
         {
             if (!SceneGeometry.IsBuilt && !SceneGeometry.Build()) return false;
             BuildScene();
+            GpuWorld.Prepare();
             return scene != null;
         }
         catch (Exception e)
@@ -191,6 +192,7 @@ public static class NightfallView
             if (holder != null) holder.SetActive(false);
         }
         catch { }
+        GpuWorld.Hide();
         RestoreWorld();
         RestoreArrows();
         NightfallControls.ReleaseCursor();
@@ -328,6 +330,7 @@ public static class NightfallView
         lastBodyScan = -99f;
         AvatarCapture.Clear();
         WorldRelay.Clear();
+        GpuWorld.Reset();
         scene = null;
         NightfallRides.Clear();
         lastGround = float.NaN;
@@ -486,9 +489,14 @@ public static class NightfallView
                 RestoreWorld();
                 RestoreArrows();
                 if (holder.activeSelf) holder.SetActive(false);
+                GpuWorld.Hide();
                 return;
             }
-            if (!holder.activeSelf) holder.SetActive(true);
+            // GPU world when this map has a model package (GpuWorld); otherwise the software view.
+            GpuWorld.Prepare();
+            bool gpu = GpuWorld.Ready && NightfallPlugin.GpuWorldEnabled?.Value != false;
+            if (holder.activeSelf == gpu) holder.SetActive(!gpu);
+            if (!gpu) GpuWorld.Hide();
 
             if (holder.transform.parent != cam.transform)
                 holder.transform.SetParent(cam.transform, false);
@@ -520,6 +528,11 @@ public static class NightfallView
                 ? want                                            // a teleport, not a step
                 : Mathf.Lerp(eyeSmooth, want, 1f - Mathf.Exp(-12f * dt));
             View.EyeHeight = eyeSmooth;
+            if (gpu)
+            {
+                GpuWorld.Render(View, renderer, billboards);
+                return;
+            }
             renderer.Render(scene, View, billboards);
             Upload();
         }
@@ -534,7 +547,9 @@ public static class NightfallView
     // well, not only for the local player (audit 2026-10-04: someone on the moving platform was
     // drawn down in the pit, someone on a ladder inside the wall band).
     private static float GroundForFigure(Vector2 p) =>
-        NightfallRides.GroundOverride(p, scene) ?? scene.GroundAt(new NfVec2(p.x, p.y));
+        NightfallRides.GroundOverride(p, scene)
+        ?? (GpuWorld.Visible ? GpuWorld.GroundAt(p.x, p.y) : null)
+        ?? scene.GroundAt(new NfVec2(p.x, p.y));
 
     /*
      * THE GROUND UNDER THE PLAYER, with two things the plain deck lookup gets wrong.
@@ -564,6 +579,14 @@ public static class NightfallView
             return ride.Value;
         }
 
+        if (GpuWorld.Ready && NightfallPlugin.GpuWorldEnabled?.Value != false)
+        {
+            // The model's own floor raster: no floor under this point is a gap, not a drop.
+            float? m = GpuWorld.GroundAt(View.Position.X, View.Position.Y);
+            if (m == null) return float.IsNaN(lastGround) ? 0f : lastGround;
+            lastGround = m.Value;
+            return m.Value;
+        }
         float g = scene.GroundAt(View.Position);
         if (!float.IsNaN(lastGround) && lastGround - g > 0.5f && !scene.DeckUnder(View.Position))
             return lastGround;   // a hole in the description, not a drop

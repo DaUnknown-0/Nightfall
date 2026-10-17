@@ -924,6 +924,34 @@ float hor = HorizonY(v, f);
     private static readonly NfColor BeamTint = new(1.00f, 0.955f, 0.870f);
     private static readonly NfColor AmbientTint = new(0.70f, 0.78f, 1.05f);
 
+    // ---- The same light for the GPU world (GpuWorld) -----------------------------------------
+    // FAIRNESS (User 2026-10-18): the GPU mode may draw sharper, never further or brighter. It
+    // therefore asks THIS renderer for the torch, the ambient and who is seen, instead of keeping a
+    // second copy of the formulas that could drift apart from the one the CPU players see.
+
+    /// Call once per frame before LitColor / Seen.
+    public void PrepareLight(in ViewParams v) => PrepareBeam(v);
+
+    /// Light at a point with the two tints applied (ambient cold, beam warm), capped like Light().
+    public NfColor LitColor(in ViewParams v, NfVec3 world, NfVec3 normal)
+    {
+        Light2(v, world, normal, out float amb, out float beam);
+        var c = new NfColor(amb * AmbientTint.R + beam * BeamTint.R,
+                            amb * AmbientTint.G + beam * BeamTint.G,
+                            amb * AmbientTint.B + beam * BeamTint.B);
+        float lit = amb + beam;
+        if (lit > 1.45f) c = c * (1.45f / lit);
+        else if (lit < 0f) c = default;
+        return c;
+    }
+
+    /// How visible a person at this point is (cone, reach, the game's light radius, arm's length).
+    public float Seen(in ViewParams v, NfVec3 world) => SeenFactor(v, world);
+
+    /// The fog blend factor at a distance (0 = clear, 1 = all fog), the same curve as Fog().
+    public static float FogAmount(float dist, in ViewParams v) =>
+        NfMath.SmoothStep(v.ViewDistance * 0.45f, v.ViewDistance, dist);
+
     private void PrepareBeam(in ViewParams v)
     {
         beamX = MathF.Cos(v.FlashlightDir);

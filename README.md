@@ -124,10 +124,36 @@ time for as long as the key is held.
 | `Look / RenderWidth` | `854` | internal resolution, height follows in 16:9 (see "How high the resolution may go") |
 | `Look / HorizontalFieldOfView` | `105` | horizontal field of view in degrees (60 to 110) |
 | `Look / TorchRange` | `13` | torch range in world units |
+| `Look / GpuWorld` | `true` | draw the map's 3D model on the graphics card when a model package is installed (see "GPU world") |
 
 The `Survey / *` settings (AutoRun, SaveAtlas, IncludeConsoles, DumpSprites) now live in
 `BepInEx\config\com.tormod.nightfallsurveytool.cfg`, the own config file of
 `NightfallSurveyTool`.
+
+## GPU world (3D map models)
+
+Every map was rebuilt as a real 3D model in Blender, room by room against the original artwork,
+with the furniture as 3D objects and the floors and walls cleaned of painted-on furniture. Nightfall
+can draw such a model on the graphics card instead of the software view: at screen resolution,
+with the same torch, the same ambient light, the same fog and the same rule for who can be seen.
+
+- **Packages:** one file per map, `BepInEx\nightfall-models\<map>.nfm`. The Unknown's Atlas maps
+  (museum, wald, park) are downloaded automatically from
+  [Nightfall-Models](https://github.com/DaUnknown-0/Nightfall-Models) and checked against size and
+  SHA-256 on every start. The vanilla maps are not published (their textures derive from the
+  game's own artwork); a package placed in the folder by hand is used as well.
+- **Fairness:** the light of every corner is asked of the software renderer itself, so a better
+  machine draws sharper, never further or brighter. On a map that has no software world (Airship,
+  The Fungle, Unknown's Atlas), the view only switches on when every player reports the same package
+  in the handshake.
+- **Shaders:** a mod cannot compile shaders, and Among Us ships no textured shader that writes depth.
+  Opaque surfaces are therefore drawn twice with the same mesh: `Hidden/Internal-Colored` fills the
+  depth buffer, `Sprites/Default` paints the texture with `ZTest LEqual`.
+- **Predator vision** maps the light per corner onto the same cold-to-hot ramp the software view
+  applies per pixel.
+- **Autotest:** with the environment variable `NIGHTFALL_DIAG=gpu` (never set in a normal game), a
+  freeplay switches the view on, stands the player in up to ten rooms and saves screenshots plus
+  frame times to `BepInEx\nightfall-diag`.
 
 ## Offline renderer
 

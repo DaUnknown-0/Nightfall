@@ -76,6 +76,7 @@ namespace Nightfall {
         }
 
         private void Start() {
+            GpuModels.Begin(this);
             if (_busy) return;
             this.StartCoroutine(CoCheckForUpdate());
             SceneManager.add_sceneLoaded((Action<Scene, LoadSceneMode>)OnSceneLoaded);
