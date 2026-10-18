@@ -388,7 +388,7 @@ internal static class GpuWorld
                 {
                     if (d == null) continue;
                     foreach (var c in d.GetComponentsInChildren<Collider2D>())
-                        if (c != null && !c.isTrigger) found.Add((d, c));
+                        if (c != null && (!c.isTrigger || c.bounds.size.x * c.bounds.size.y < 4f)) found.Add((d, c));
                 }
         }
         catch { }
@@ -442,12 +442,22 @@ internal static class GpuWorld
         }
     }
 
-    private static bool DoorClosed(Door d)
+    private static bool DoorClosed(Door d, in ViewParams v)
     {
         try
         {
-            if (d.Owner != null) return !d.Owner.IsOpen;
-            return d.Col != null && d.Col.enabled;
+            // Open by any of the game's conventions: IsOpen on the door, the collider switched off
+            // (DeconSystem.SetDoorway) or turned into a trigger. And never a slab around the camera
+            // itself - the player cannot stand inside a shut door, so that slab is stale state
+            // (report 18.10.: a steel wall filling the picture in a doorway).
+            if (d.Col == null) return false;
+            if (!d.Col.enabled || d.Col.isTrigger) return false;
+            if (d.Owner != null && d.Owner.IsOpen) return false;
+            var c = d.Chunk;
+            float px = v.Position.X, py = v.Position.Y;
+            if (px > c.Pos[0] - 0.35f && px < c.Pos[3] + 0.35f && py > c.Pos[1] - 0.35f && py < c.Pos[7] + 0.35f)
+                return false;
+            return true;
         }
         catch { return false; }
     }
@@ -524,7 +534,7 @@ internal static class GpuWorld
         foreach (var c in chunks) Light(c, v, ch, sh, cone);
         foreach (var d in doors)
         {
-            bool shut = DoorClosed(d);
+            bool shut = DoorClosed(d, v);
             if (d.Chunk.Go.activeSelf != shut) d.Chunk.Go.SetActive(shut);
             if (shut) Light(d.Chunk, v, ch, sh, cone);
         }
