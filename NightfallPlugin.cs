@@ -248,6 +248,7 @@ internal static class NightfallDriverPatch
             NightfallState.PollMapChange();
             NightfallHandshake.Tick();
             NightfallState.Tick();
+            SurveillanceGuard.Tick();
 
             // The ability keys. Deliberately outside the view's own lifetime: the point of the
             // labels is that the key is already known when the world goes dark, and a player who
