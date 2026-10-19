@@ -8,12 +8,12 @@ namespace Nightfall;
 
 internal static class GpuModelCatalog
 {
-    public const string Tag = "v3";
+    public const string Tag = "v4";
 
     public static readonly (string Name, long Size, string Sha256)[] Files =
     {
-        ("museum.nfm", 24905072L, "c2554d416911540c0f4eba6435e9bec2608f3986b24c04fcd24d667bde27aa4b"),
-        ("wald.nfm", 18180771L, "7c6b40d35f61d1cc5adecc4d0696146938616013bcff0a957f52b9f6bed274c2"),
-        ("park.nfm", 42933490L, "2585264551ac37d312ea101186020d48563498b0f63178450ec61b36deec2812"),
+        ("museum.nfm", 26390148L, "d981f0aee4364ec5fe08447ce0a61e3a86e1c35132961243173b5fa81b84de28"),
+        ("wald.nfm", 22908164L, "7df536ea8d85eddc3c9ca09cdd6dac388bde256316c6a6709d17e6ff19886614"),
+        ("park.nfm", 43180754L, "1931cfeb5cacbf3b24986b167fa67174699e9f3e30505b6ad6c058eaba98a8f3"),
     };
 }
