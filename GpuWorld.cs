@@ -810,9 +810,27 @@ internal static class GpuWorld
                                                                 (byte)(MathF.Min(1f, b) * 255), (byte)(A * 255));
             }
         }
+        // Straight from the managed buffer, like NightfallView: SetPixels32 converted the Color32[] into a
+        // new 518 KB Il2Cpp array every frame (audit 21.10.). RGBA32 and Color32 share the byte order.
+        if (!overlayRawFailed)
+        {
+            try
+            {
+                unsafe
+                {
+                    fixed (Color32* p = overlayPx)
+                        overlayTex.LoadRawTextureData((IntPtr)p, overlayPx.Length * 4);
+                }
+                overlayTex.Apply(false);
+                return;
+            }
+            catch (Exception) { overlayRawFailed = true; }
+        }
         overlayTex.SetPixels32(overlayPx);
         overlayTex.Apply(false);
     }
+
+    private static bool overlayRawFailed;
 
     // ================================================================ teardown
     public static void Release()
