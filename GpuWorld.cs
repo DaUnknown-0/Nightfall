@@ -777,8 +777,17 @@ internal static class GpuWorld
         overlayGo.transform.localRotation = Quaternion.identity;
         overlayGo.transform.localScale = new Vector3(hgt * cam.aspect / ((float)OvW / OvH) * 1.02f, hgt * 1.02f, 1f);
 
+        // HandLight mixes in LINEAR light (it undoes the tone curve of what is under it), so "white" has to be
+        // the byte that reads back as linear 1.0, and the coverage is worked out in linear values too
+        // (audit 21.10.: on 255, which reads back as 63, the torch edges came out thin and see-through).
+        if (linLut == null)
+        {
+            linLut = new float[256];
+            for (int i = 0; i < 256; i++) linLut[i] = NfMath.FromByte((byte)i);
+            whiteByte = NfMath.ToByte(1f);
+        }
         Array.Clear(onBlack, 0, onBlack.Length);
-        for (int i = 0; i < onWhite.Length; i++) onWhite[i] = 255;
+        for (int i = 0; i < onWhite.Length; i++) onWhite[i] = whiteByte;
         HandLight.Draw(onBlack, OvW, OvH, v);
         HandLight.Draw(onWhite, OvW, OvH, v);
         // The vignette of the software view, as black with coverage (same curve as HandLight.Vignette).
@@ -790,11 +799,13 @@ internal static class GpuWorld
             for (int x = 0; x < OvW; x++)
             {
                 int o = (y * OvW + x) * 4;
-                // coverage of the hand: a = 1 - (white - black)
-                float a = 1f - (onWhite[o] - onBlack[o] + onWhite[o + 1] - onBlack[o + 1] + onWhite[o + 2] - onBlack[o + 2]) / 765f;
+                // coverage of the hand: a = 1 - (white - black), linear
+                float lb0 = linLut[onBlack[o]], lb1 = linLut[onBlack[o + 1]], lb2 = linLut[onBlack[o + 2]];
+                float a = 1f - (linLut[onWhite[o]] - lb0 + linLut[onWhite[o + 1]] - lb1 + linLut[onWhite[o + 2]] - lb2) / 3f;
                 a = a < 0f ? 0f : a > 1f ? 1f : a;
                 float r = 0f, g = 0f, b = 0f;
-                if (a > 0.004f) { r = onBlack[o] / 255f / a; g = onBlack[o + 1] / 255f / a; b = onBlack[o + 2] / 255f / a; }
+                // the hand's own colour, back through the tone curve for the screen
+                if (a > 0.004f) { r = NfMath.ToByte(lb0 / a) / 255f; g = NfMath.ToByte(lb1 / a) / 255f; b = NfMath.ToByte(lb2 / a) / 255f; }
                 float ddx = (x - cx) / maxR;
                 float r2 = (ddx * ddx + ddy * ddy) * k * k;
                 float va = 0f;
@@ -831,6 +842,8 @@ internal static class GpuWorld
     }
 
     private static bool overlayRawFailed;
+    private static float[] linLut;
+    private static byte whiteByte = 255;
 
     // ================================================================ teardown
     public static void Release()

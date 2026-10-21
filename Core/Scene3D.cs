@@ -854,6 +854,10 @@ public sealed class Scene3D
 
                 float wx = min.X + (x + 0.5f) * cell - eye.X;
                 float d2 = wx * wx + wz * wz;
+                // Out of range: the window is as wide as the map's LARGEST triangle needs, so one big floor
+                // made it cover the whole grid. Each cell is held to its own reach (audit 21.10.).
+                float reach = range + margin + bucketRadius[z * gw + x];
+                if (d2 > reach * reach) continue;
                 // The cell the eye is in, and its neighbours, are never culled: the player is
                 // standing on that floor patch and inside that room.
                 if (cull && d2 > cell * cell * 2f)

@@ -41,6 +41,14 @@ internal static class SurveillanceGuard
         if (mg.TryCast<SurveillanceMinigame>() == null && mg.TryCast<PlanetSurveillanceMinigame>() == null
             && mg.TryCast<FungleSurveillanceMinigame>() == null)
             return;
+        // Only while the first-person view is up: the masks used to be cut for every Nightfall user, which
+        // also hid whatever else the game draws on layer 1 from their camera feeds (audit 21.10.). Turning
+        // the view on with the cameras open is caught too, the scan simply starts then.
+        if (!NightfallView.IsActive)
+        {
+            lastInstance = IntPtr.Zero;
+            return;
+        }
         // The cameras are created inside Begin, after Minigame.Instance is set; look again for a
         // few frames so none created late is missed, then leave the minigame alone.
         if (mg.Pointer != lastInstance)
