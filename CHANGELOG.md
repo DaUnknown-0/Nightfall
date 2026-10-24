@@ -1,6 +1,16 @@
 # Changelog — Nightfall
 
-## Unreleased
+## 0.3.4.4 (Testversion, 2026-10-24)
+
+### Nachtraege zur GPU-Welt (2026-10-18 bis 2026-10-21)
+- **Modellkatalog v4** (Nightfall-Models): Museum mit 3D-T-Rex in der Rotunde (85 % Laenge, steckt nicht mehr
+  in den Waenden), Park mit gebautem Riesenrad, Karussell und Lichtturm, alle Atlas-Requisiten als echte Koerper.
+- **Offene Tueren** erscheinen nicht mehr als graue Platte (`DoorClosed` kennt alle Offen-Zustaende, nie eine
+  Platte um die Kamera selbst).
+- **Kamera-Minispiel** (`SurveillanceGuard.cs`): kein schwarzer Feed mehr, wenn man selbst im Blick einer Kamera
+  steht; greift nur in der Ich-Ansicht.
+- **Fackelrand** im GPU-Overlay wieder deckend (Mischung in linearem Licht), Overlay ohne neues Il2Cpp-Array pro
+  Bild, Zellfenster in `Scene3D.Query` pro Zelle.
 
 ### GPU-Welt mit den Blender-Kartenmodellen (2026-10-18)
 - **Neuer GPU-Modus** (`GpuWorld.cs`): Liegt fuer die Karte ein Modellpaket in
