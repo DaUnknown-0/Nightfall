@@ -1,5 +1,12 @@
 # Changelog — Nightfall
 
+## 0.4.0 (Full Release, 2026-10-30)
+
+Fasst alle Testversionen seit 0.3.4 zusammen (GPU-Welt, Audits vom 03./04./08.10.). Neu seit 0.3.4.4:
+- **Handshake liest seine Nachricht als Prefix** an der aktuellen Leseposition, bevor andere Handler laufen, und stellt
+  die Position danach zurueck (vorher Postfix mit Ruecksprung auf Position 0). Die Spieler-Id im Paket wird weiter
+  gelesen, aber nie vertraut (es zaehlt der Absender).
+
 ## 0.3.4.4 (Testversion, 2026-10-24)
 
 ### Nachtraege zur GPU-Welt (2026-10-18 bis 2026-10-21)

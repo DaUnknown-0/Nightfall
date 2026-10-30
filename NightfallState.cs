@@ -737,23 +737,24 @@ internal static class NightfallRpcPatch
     // NOT from the payload byte: a client that writes someone else's id into the payload would
     // otherwise register that player as "has the mod" and open the fairness gate for a lobby that
     // does not actually have it. The payload byte is still written by Announce() for wire
-    // compatibility with older builds; it is deliberately not read here.
-    public static void Postfix(PlayerControl __instance, [HarmonyArgument(0)] byte callId,
+    // compatibility with older builds; it is consumed but never trusted here.
+    public static void Prefix(PlayerControl __instance, [HarmonyArgument(0)] byte callId,
                                [HarmonyArgument(1)] MessageReader reader)
     {
         try
         {
             if (callId != NightfallHandshake.CallId || __instance == null) return;
             string world = "";
+            int position = reader.Position;
             try
             {
-                // Nothing in the game reads our call id, so the payload is untouched: id, then the
-                // model package (newer builds only).
-                reader.Position = 0;
+                // The game has already consumed NetId and CallId. Read from the current payload
+                // position before other handlers run, and leave their reader unchanged.
                 reader.ReadByte();
                 if (reader.BytesRemaining > 0) world = reader.ReadString();
             }
             catch { world = ""; }
+            finally { reader.Position = position; }
             NightfallHandshake.Receive(__instance.PlayerId, world);
         }
         catch { }
