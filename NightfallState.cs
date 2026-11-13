@@ -199,14 +199,21 @@ public static class NightfallState
         {
             var model = SceneGeometry.Current;
             if (model == null) return false;
-            bool ok = Core.Scene3D.UseAreas && Core.MapAreaRegistry.AppliesTo(model.MapKey);
+            // An Unknown's Atlas map runs on the Skeld ship, so its key ("skeldship") matches the
+            // Skeld entry in MapAreaRegistry. It must not count as Skeld: an Atlas map only gets the
+            // view through a model package that every player has.
+            string atlasKey = GpuWorld.AtlasActiveKey();
+            bool ok = atlasKey == null && Core.Scene3D.UseAreas && Core.MapAreaRegistry.AppliesTo(model.MapKey);
             // Or a 3D model package that every player has (GpuWorld, see EveryoneHasWorld).
             if (!ok) ok = NightfallHandshake.EveryoneHasWorld(GpuWorld.PackKeyForCurrentMap());
-            if (!ok && lastLoggedMap != model.MapKey)
+            string shownKey = atlasKey != null ? "atlas:" + atlasKey : model.MapKey;
+            // Only once the handshake had a full round: a map with a model package gets "ok" only after every
+            // client reported it, and an earlier verdict told the host "no world" for a view that came on later.
+            if (!ok && lastLoggedMap != shownKey && NightfallHandshake.Settled)
             {
-                lastLoggedMap = model.MapKey;
+                lastLoggedMap = shownKey;
                 NightfallPlugin.Logger?.LogInfo(
-                    $"[Nightfall] '{model.MapKey}' has no described world - the first-person view "
+                    $"[Nightfall] '{shownKey}' has no described world - the first-person view "
                     + "stays off on this map (only the maps listed in MapAreaRegistry have a built world).");
                 if (ViewWantedThisRound())
                     HostChat("Nightfall: this map has no first-person world yet - the view stays off here.");
@@ -592,13 +599,18 @@ public static class NightfallHandshake
 
     private static readonly HashSet<byte> respondents = new();
     private static float lastAnnounce;
+    private static float firstAnnounce = -1f;
     private static bool warned;
+
+    /// True once every client had a full announce cycle this round (first announce plus one more).
+    public static bool Settled => firstAnnounce >= 0f && Time.time - firstAnnounce >= 6f;
 
     public static void Reset()
     {
         respondents.Clear();
         worlds.Clear();
         lastAnnounce = 0f;
+        firstAnnounce = -1f;
         warned = false;
     }
 
@@ -702,12 +714,17 @@ public static class NightfallHandshake
             if (Time.time - lastAnnounce > 5f)
             {
                 lastAnnounce = Time.time;
+                if (firstAnnounce < 0f) firstAnnounce = Time.time;
                 Announce();
             }
 
             if (warned || AmongUsClient.Instance == null || !AmongUsClient.Instance.AmHost) return;
             if (NightfallPlugin.RequireEveryone == null || !NightfallPlugin.RequireEveryone.Value) return;
             if (Time.time - lastAnnounce > 1f) return;      // only just after an announce round
+            // Not in the round's first announce round: the clients' own announces are still on the way then,
+            // and the host warned about everyone although the view came on for all of them seconds later
+            // (multi-client test 2026-11-12). From the second round on every client had a full cycle to answer.
+            if (firstAnnounce < 0f || Time.time - firstAnnounce < 4f) return;
 
             var missing = new List<string>();
             foreach (var p in PlayerControl.AllPlayerControls)

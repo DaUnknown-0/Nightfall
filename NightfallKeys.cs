@@ -717,7 +717,13 @@ public static class NightfallKeys
             if (kv.Value == null) stale.Add(kv.Key);
         foreach (var k in stale) labels.Remove(k);
 
-        if (assigned.Count > 400) assigned.Clear();
+        // Only buttons of the current list keep their key. The old cap (clear above 400) let two or three
+        // rounds of thrown-away CustomButtons stay referenced, and with them their whole il2cpp graph
+        // (multi-client test 2026-11-12: +32 000 objects per round held through this dictionary).
+        var current = new HashSet<object>();
+        if (list != null) foreach (var b in list) if (b != null) current.Add(b);
+        foreach (var k in new List<object>(assigned.Keys)) if (!current.Contains(k)) assigned.Remove(k);
+        foreach (var k in new List<object>(labels.Keys)) if (!current.Contains(k)) labels.Remove(k);
 
         // AUDIT-2026-09-03: these are keyed by button instance, and a list rebuild (the only time
         // Prune() runs) means HudManager.Start has thrown every old instance away. Stale keys would

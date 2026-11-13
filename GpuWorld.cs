@@ -27,8 +27,8 @@
  * is asked of the software renderer itself (Raster3D.LitColor: ambient, torch cone, reach), the
  * fog uses its curve, and a person is drawn with its Seen() factor and PersonRange cut - the same
  * numbers a player on the software view gets. Tiles beyond the view distance are switched off,
- * so the picture ends exactly where the fog does. The werewolf's predator vision is a full-screen
- * colour mapping no game shader can do; while it is on, NightfallView keeps the software view.
+ * so the picture ends exactly where the fog does. The werewolf's predator vision is coloured here
+ * as well (Light() maps every lit corner through Predator()), so the GPU view stays on with it.
  */
 
 using System;
@@ -116,6 +116,23 @@ internal static class GpuWorld
     /// through its public AtlasMaps.ActiveKey (read by reflection, no compile-time reference).
     public static string PackKeyForCurrentMap()
     {
+        string ak = AtlasActiveKey();
+        if (ak != null) return ak;
+        return SceneGeometry.CurrentMapKey switch
+        {
+            "skeldship" => "skeld",
+            "miraship" => "mira",
+            "polusship" => "polus",
+            "airship" => "airship",
+            "fungleship" => "fungle",
+            _ => null,
+        };
+    }
+
+    /// The key of the Unknown's Atlas map being played, or null on any other map. An Atlas map runs
+    /// on the Skeld ship, so its ship name ("skeldship") alone would pass it off as Skeld.
+    public static string AtlasActiveKey()
+    {
         try
         {
             var t = AtlasMapsType();
@@ -126,15 +143,7 @@ internal static class GpuWorld
             }
         }
         catch { }
-        return SceneGeometry.CurrentMapKey switch
-        {
-            "skeldship" => "skeld",
-            "miraship" => "mira",
-            "polusship" => "polus",
-            "airship" => "airship",
-            "fungleship" => "fungle",
-            _ => null,
-        };
+        return null;
     }
 
     private static Type atlasMaps;

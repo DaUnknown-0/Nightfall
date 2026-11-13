@@ -149,6 +149,10 @@ public static class NightfallView
         // The rides first: the platform's two ends go INTO the build (its disc is built at
         // every slot along the ride), the ladders and the zipline are kept for the ground.
         var platform = NightfallRides.Discover();
+        // An Unknown's Atlas map is technically the Skeld ship, and its key would hand it the Skeld
+        // rooms. Atlas maps have no hand-built world: the software scene stays empty (like a map
+        // without areas) and only the model package (GpuWorld) draws the map.
+        if (GpuWorld.AtlasActiveKey() != null) map.MapKey = "atlas";
         scene = Scene3D.Build(map, platform);
         float mbAfter = PrivateMb();
         NightfallPlugin.Logger?.LogInfo(
